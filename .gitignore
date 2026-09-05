@@ -1,0 +1,40 @@
+# Byte-compiled / cache do Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Segredos e configurações de conta (NÃO SUBIR PRO GITHUB)
+.env
+.env.local
+config_conta.json
+alvos_monitorados.json
+
+# Downloads e mídias raspadas (evita repositório pesado)
+downloads/
+*.jpg
+*.jpeg
+*.png
+*.mp4
+*.webp
+*.gif
+
+# Bancos de dados locais
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs e relatórios temporários
+*.log
+session_*.json
+relatorio_*.json
+
+# Playwright & Navegador
+.playwright/
+test-results/
+
+# Sistema Operacional / IDE
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+.DS_Store
