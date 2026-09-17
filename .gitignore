@@ -7,7 +7,9 @@ __pycache__/
 .env
 .env.local
 config_conta.json
+contas_pool.json
 alvos_monitorados.json
+
 
 # Downloads e mídias raspadas (evita repositório pesado)
 downloads/

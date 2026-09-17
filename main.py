@@ -5,7 +5,7 @@ import json
 import sqlite3
 import random
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from playwright.sync_api import sync_playwright
 
 # Força UTF-8 no console Windows para evitar UnicodeEncodeError
@@ -17,12 +17,16 @@ if sys.platform == "win32":
         pass
 
 # =====================================================================
-# CONFIGURAÇÕES DA CONTA (VARIÁVEIS DE AMBIENTE .ENV & DESKTOP)
+# CONFIGURAÇÕES DA CONTA & POOL DE CONTAS (DESKTOP)
 # =====================================================================
 CONFIG_FILE = "config_conta.json"
+CONTAS_POOL_FILE = "contas_pool.json"
 MONITOR_FILE = "alvos_monitorados.json"
 DB_NAME = "osint_coletas.db"
 ENV_FILE = ".env"
+
+# Cooldown em horas entre tentativas de contas diferentes após uma recusa
+COOLDOWN_HORAS = 2  # Padrão ajustado para 2 horas para testes do usuário
 
 def carregar_dotenv(caminho=".env"):
     """Carrega variáveis do arquivo .env sem exigir dependências externas."""
@@ -43,7 +47,7 @@ def carregar_dotenv(caminho=".env"):
 carregar_dotenv()
 
 def carregar_config():
-    """Carrega configurações da conta priorizando .env e com fallback em config_conta.json."""
+    """Carrega configurações da conta principal priorizando .env e com fallback em config_conta.json."""
     carregar_dotenv()
     cfg = {
         "user": os.getenv("IG_USER", ""),
@@ -51,7 +55,6 @@ def carregar_config():
         "sessionid": os.getenv("IG_SESSIONID", "")
     }
 
-    # Se faltar algum campo, tenta ler do config_conta.json local
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -62,7 +65,6 @@ def carregar_config():
         except Exception:
             pass
 
-    # Se sessionid contiver o user_id antes do %3A ou :, deduz o ds_user_id
     if cfg.get("sessionid") and not cfg.get("ds_user_id"):
         uid = cfg["sessionid"].split("%3A")[0].split(":")[0]
         if uid.isdigit():
@@ -72,14 +74,12 @@ def carregar_config():
 
 def salvar_config(cfg):
     """Salva as credenciais no .env e no config_conta.json local."""
-    # 1. Salva em config_conta.json
     try:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=4)
     except Exception:
         pass
 
-    # 2. Salva ou atualiza o .env local
     try:
         linhas = [
             "# Credenciais da conta de automação do Instagram (MANTENHA PRIVADO)\n",
@@ -92,6 +92,57 @@ def salvar_config(cfg):
     except Exception:
         pass
 
+# =====================================================================
+# GERENCIAMENTO DO POOL DE MÚLTIPLAS CONTAS
+# =====================================================================
+def carregar_pool_contas():
+    """Carrega todas as contas do pool. Se não existir, migra a conta do .env automaticamente."""
+    if os.path.exists(CONTAS_POOL_FILE):
+        try:
+            with open(CONTAS_POOL_FILE, "r", encoding="utf-8") as f:
+                contas = json.load(f)
+                if isinstance(contas, list) and len(contas) > 0:
+                    return contas
+        except Exception:
+            pass
+
+    # Migração automática inicial da conta existente
+    cfg = carregar_config()
+    contas = []
+    if cfg.get("sessionid"):
+        contas.append({
+            "id": 1,
+            "user": cfg.get("user") or "conta_1",
+            "ds_user_id": cfg.get("ds_user_id", ""),
+            "sessionid": cfg.get("sessionid", ""),
+            "ativo": True,
+            "adicionado_em": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
+        salvar_pool_contas(contas)
+    return contas
+
+def salvar_pool_contas(contas):
+    """Salva o pool de contas no arquivo contas_pool.json."""
+    with open(CONTAS_POOL_FILE, "w", encoding="utf-8") as f:
+        json.dump(contas, f, indent=4, ensure_ascii=False)
+
+def obter_conta_ativa():
+    """Retorna a primeira conta ativa e configurada do pool."""
+    pool = carregar_pool_contas()
+    for c in pool:
+        if c.get("ativo", True) and c.get("sessionid"):
+            return c
+    if pool:
+        return pool[0]
+    return carregar_config()
+
+def obter_conta_por_user(username):
+    """Retorna os dados da conta no pool pelo nome de usuário."""
+    pool = carregar_pool_contas()
+    for c in pool:
+        if c.get("user", "").lower() == username.lower():
+            return c
+    return None
 
 # =====================================================================
 # BANCO DE DADOS LOCAL (HISTÓRICO DE COLETAS)
@@ -129,7 +180,7 @@ def registrar_coleta_db(username: str, diretorio: str, qtd_midias: int, status: 
     conn.close()
 
 # =====================================================================
-# GESTÃO DE ALVOS MONITORADOS (JSON)
+# GESTÃO DE ALVOS MONITORADOS (JSON COM SUPORTE A CASCATA)
 # =====================================================================
 def carregar_alvos():
     if os.path.exists(MONITOR_FILE):
@@ -144,23 +195,49 @@ def salvar_alvos(alvos):
     with open(MONITOR_FILE, "w", encoding="utf-8") as f:
         json.dump(alvos, f, indent=4, ensure_ascii=False)
 
-def registrar_novo_alvo(username, is_private=True):
+def registrar_novo_alvo(username, is_private=True, conta_usada=None):
+    """Registra ou atualiza um alvo, gravando a conta responsável e o histórico de tentativas."""
     alvos = carregar_alvos()
+    agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    if not conta_usada:
+        c_ativa = obter_conta_ativa()
+        conta_usada = c_ativa.get("user", "desconhecido")
+
     # Verifica se já existe
     for a in alvos:
         if a["username"].lower() == username.lower():
             a["status"] = "AGUARDANDO_APROVACAO" if is_private else "SEGUINDO"
-            a["atualizado_em"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            a["conta_atual"] = conta_usada
+            a["atualizado_em"] = agora
+            if "tentativas" not in a or not isinstance(a["tentativas"], list):
+                a["tentativas"] = []
+            a["tentativas"].append({
+                "conta": conta_usada,
+                "solicitado_em": agora,
+                "status": "SOLICITADO"
+            })
             salvar_alvos(alvos)
             return
+
     alvos.append({
         "username": username,
         "is_private": is_private,
         "status": "AGUARDANDO_APROVACAO" if is_private else "SEGUINDO",
-        "solicitado_em": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "atualizado_em": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "conta_atual": conta_usada,
+        "tentativas": [
+            {
+                "conta": conta_usada,
+                "solicitado_em": agora,
+                "status": "SOLICITADO"
+            }
+        ],
+        "cooldown_ate": None,
+        "solicitado_em": agora,
+        "atualizado_em": agora
     })
     salvar_alvos(alvos)
+
 
 # =====================================================================
 # NAVEGADOR PLAYWRIGHT (DESKTOP / PC CHROME)
@@ -528,33 +605,84 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
 
 
 # =====================================================================
+# AUXILIARES DE ENVIO DE FOLLOW COM CONTA ESPECÍFICA
+# =====================================================================
+def enviar_follow_com_conta(browser, conta_cfg, target_username):
+    """Abre contexto isolado com a conta do pool especificada e envia a solicitação de follow."""
+    ctx = criar_contexto_desktop(browser, conta_cfg)
+    page = ctx.new_page()
+    resultado = "FALHA"
+    try:
+        info = obter_info_perfil(page, target_username)
+        if info["button_status"] == "SEGUINDO":
+            resultado = "JA_SEGUINDO"
+        elif info["button_status"] == "SOLICITADO":
+            resultado = "JA_SOLICITADO"
+        else:
+            clicked = False
+            for btn in page.query_selector_all("header button, main header button, button"):
+                txt = (btn.inner_text() or "").strip().lower()
+                if txt in ["follow", "seguir"]:
+                    btn.click()
+                    clicked = True
+                    break
+            page.wait_for_timeout(3000)
+            if clicked:
+                resultado = "SUCESSO"
+    except Exception as e:
+        print(f"  [-] Erro ao enviar follow: {e}")
+        resultado = "ERRO"
+    finally:
+        ctx.close()
+    return resultado
+
+# =====================================================================
 # FLUXOS DE OPERAÇÃO DO MENU
 # =====================================================================
 
 def fluxo_seguir_alvo():
-    """Acessa o perfil, clica no botão oficial de Seguir no PC e registra no monitoramento."""
-    cfg = carregar_config()
+    """Acessa o perfil, clica no botão de Seguir e registra no monitoramento com a conta escolhida."""
+    pool = carregar_pool_contas()
+    contas_ativas = [c for c in pool if c.get("ativo", True) and c.get("sessionid")]
+    
+    if not contas_ativas:
+        print("\n[!] Nenhuma conta ativa encontrada no Pool! Configure uma conta na opção [5] primeiro.")
+        return
+
+    # Se tiver mais de uma conta ativa, permite escolher qual usar
+    conta_selecionada = contas_ativas[0]
+    if len(contas_ativas) > 1:
+        print("\n--- Selecione a conta fantoche para iniciar a abordagem ---")
+        for idx, c in enumerate(contas_ativas, 1):
+            print(f" [{idx}] @{c.get('user', 'conta')} (ID: {c.get('id')})")
+        escolha_c = input(f">> Escolha a conta [1-{len(contas_ativas)}] (Padrão 1): ").strip()
+        if escolha_c.isdigit() and 1 <= int(escolha_c) <= len(contas_ativas):
+            conta_selecionada = contas_ativas[int(escolha_c) - 1]
+
     target = input("\n>> Digite o username do alvo a seguir (sem @): ").strip().replace("@", "")
     if not target:
         print("Username inválido.")
         return
 
+    print(f"[*] Usando conta @{conta_selecionada.get('user')} para abordar @{target}...")
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        ctx = criar_contexto_desktop(browser, cfg)
+        ctx = criar_contexto_desktop(browser, conta_selecionada)
         page = ctx.new_page()
 
         info = obter_info_perfil(page, target)
         print("\n" + "="*50)
-        print(f" Perfil: @{target}")
+        print(f" Perfil Alvo: @{target}")
         print(f" Privado: {'SIM 🔒' if info['is_private'] else 'NÃO 🌐'}")
         print(f" Situação: {info['button_status']}")
+        print(f" Conta Abordando: @{conta_selecionada.get('user')}")
         print("="*50)
 
         if info["button_status"] == "SEGUINDO":
-            print(f"[i] Você já segue @{target}! O feed já está acessível.")
-            registrar_novo_alvo(target, is_private=info["is_private"])
-            baixar_agora = input("Deseja baixar as fotos agora? (s/n): ").strip().lower()
+            print(f"[i] A conta @{conta_selecionada.get('user')} já segue @{target}! O feed já está acessível.")
+            registrar_novo_alvo(target, is_private=info["is_private"], conta_usada=conta_selecionada.get("user"))
+            baixar_agora = input("Deseja baixar o conteúdo agora? (s/n): ").strip().lower()
             if baixar_agora in ["s", "sim", "y"]:
                 extrair_e_baixar_fotos(page, target)
             browser.close()
@@ -562,11 +690,10 @@ def fluxo_seguir_alvo():
 
         if info["button_status"] == "SOLICITADO":
             print(f"[⏳] A solicitação já foi enviada anteriormente e está pendente de aprovação.")
-            registrar_novo_alvo(target, is_private=info["is_private"])
+            registrar_novo_alvo(target, is_private=info["is_private"], conta_usada=conta_selecionada.get("user"))
             browser.close()
             return
 
-        # Botão está disponível para seguir
         confirma = input(f"\n>> Deseja enviar a solicitação para @{target}? (s/n): ").strip().lower()
         if confirma in ["s", "sim", "y"]:
             print(f"[*] Clicando no botão oficial de seguir pelo Chrome Desktop...")
@@ -577,11 +704,11 @@ def fluxo_seguir_alvo():
                     btn.click()
                     clicked = True
                     break
-            
+
             page.wait_for_timeout(3000)
             if clicked:
-                print(f"[+] Solicitação enviada com sucesso para @{target}!")
-                registrar_novo_alvo(target, is_private=info["is_private"])
+                print(f"[+] Solicitação enviada com sucesso para @{target} usando @{conta_selecionada.get('user')}!")
+                registrar_novo_alvo(target, is_private=info["is_private"], conta_usada=conta_selecionada.get("user"))
             else:
                 print(f"[-] Não foi possível localizar o botão de seguir.")
         else:
@@ -590,40 +717,153 @@ def fluxo_seguir_alvo():
         browser.close()
 
 def fluxo_verificar_e_baixar():
-    """Varre a lista de alvos não concluídos. Se aceito ou seguindo, baixa tudo automaticamente."""
+    """
+    Varre alvos em monitoramento:
+    - Se aceito: baixa tudo automaticamente.
+    - Se recusado: ativa cooldown de 2 horas.
+    - Se cooldown terminou: passa para a próxima conta ativa do pool em cascata.
+    """
     alvos = carregar_alvos()
-    pendentes = [a for a in alvos if a.get("status") != "CONCLUIDO"]
-    
+    pendentes = [a for a in alvos if a.get("status") not in ["CONCLUIDO", "ESGOTADO"]]
+
     if not pendentes:
-        print("\n[i] Todos os alvos registrados já foram baixados e concluídos!")
+        print("\n[i] Não há alvos pendentes no momento (todos concluídos ou esgotados).")
         return
 
     print(f"\n[+] Verificando {len(pendentes)} alvo(s) em monitoramento...")
-    cfg = carregar_config()
+    pool = carregar_pool_contas()
+    agora = datetime.now()
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        ctx = criar_contexto_desktop(browser, cfg)
-        page = ctx.new_page()
 
         for alvo in pendentes:
             username = alvo["username"]
-            print(f"\n--- Checando status de @{username} ---")
-            info = obter_info_perfil(page, username)
+            status_atual = alvo.get("status", "AGUARDANDO_APROVACAO")
+            conta_nome = alvo.get("conta_atual")
+            conta_cfg = obter_conta_por_user(conta_nome) if conta_nome else obter_conta_ativa()
 
-            if info["button_status"] == "SEGUINDO" or not info["is_private"]:
-                print(f"[🎉] SUCESSO! O perfil @{username} está ACESSÍVEL (Solicitação Aceita)! ")
-                print(f"[*] Disparando download automático de todo o conteúdo...")
-                
-                qtd = extrair_e_baixar_fotos(page, username)
-                alvo["status"] = "CONCLUIDO"
-                alvo["qtd_fotos_baixadas"] = qtd
-                alvo["concluido_em"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                salvar_alvos(alvos)
-            elif info["button_status"] == "SOLICITADO":
-                print(f"[⏳] @{username} ainda não aceitou a solicitação. Continuando monitoramento.")
-            else:
-                print(f"[!] Situação atual de @{username}: {info['button_status']}")
+            if not conta_cfg or not conta_cfg.get("sessionid"):
+                conta_cfg = obter_conta_ativa()
+
+            print(f"\n--- Checando @{username} (Status: {status_atual}) ---")
+
+            # ---------------------------------------------------------
+            # CENÁRIO 1: ALVO AGUARDANDO APROVAÇÃO
+            # ---------------------------------------------------------
+            if status_atual == "AGUARDANDO_APROVACAO":
+                ctx = criar_contexto_desktop(browser, conta_cfg)
+                page = ctx.new_page()
+                try:
+                    info = obter_info_perfil(page, username)
+                    btn_st = info["button_status"]
+
+                    # Caso A: Foi aceito ou perfil é aberto
+                    if btn_st == "SEGUINDO" or not info["is_private"]:
+                        print(f"[🎉] SUCESSO! @{username} ACEITOU a solicitação de @{conta_cfg.get('user')}!")
+                        print(f"[*] Disparando download automático de todo o conteúdo...")
+                        qtd = extrair_e_baixar_fotos(page, username)
+                        alvo["status"] = "CONCLUIDO"
+                        alvo["qtd_fotos_baixadas"] = qtd
+                        alvo["concluido_em"] = agora.strftime("%Y-%m-%d %H:%M:%S")
+
+                        # Atualiza histórico de tentativas
+                        if "tentativas" in alvo and alvo["tentativas"]:
+                            alvo["tentativas"][-1]["status"] = "ACEITO"
+                        salvar_alvos(alvos)
+
+                    # Caso B: Ainda pendente
+                    elif btn_st == "SOLICITADO":
+                        print(f"[⏳] @{username} ainda não respondeu à solicitação de @{conta_cfg.get('user')}. Continuando espera.")
+
+                    # Caso C: Botão voltou para 'Seguir' -> RECUSA DETECTADA!
+                    elif btn_st == "NAO_SEGUINDO":
+                        cooldown_limite = agora + timedelta(hours=COOLDOWN_HORAS)
+                        cooldown_str = cooldown_limite.strftime("%Y-%m-%d %H:%M:%S")
+                        alvo["status"] = "REJEITADO_COOLDOWN"
+                        alvo["cooldown_ate"] = cooldown_str
+
+                        # Marca recusa no histórico de tentativas
+                        if "tentativas" not in alvo or not isinstance(alvo["tentativas"], list):
+                            alvo["tentativas"] = []
+                        if alvo["tentativas"]:
+                            alvo["tentativas"][-1]["status"] = "REJEITADO"
+                            alvo["tentativas"][-1]["rejeitado_em"] = agora.strftime("%Y-%m-%d %H:%M:%S")
+
+                        salvar_alvos(alvos)
+                        print(f"[🚫] RECUSA DETECTADA! @{username} recusou a solicitação de @{conta_cfg.get('user')}.")
+                        print(f"[⏳] Entrando em cooldown de {COOLDOWN_HORAS}h. Próxima conta poderá tentar a partir de: {cooldown_str}")
+
+                    else:
+                        print(f"[!] Situação atual de @{username}: {btn_st}")
+                finally:
+                    ctx.close()
+
+            # ---------------------------------------------------------
+            # CENÁRIO 2: ALVO EM COOLDOWN DE REJEIÇÃO
+            # ---------------------------------------------------------
+            elif status_atual == "REJEITADO_COOLDOWN":
+                cooldown_str = alvo.get("cooldown_ate")
+                cooldown_expirado = False
+
+                if cooldown_str:
+                    try:
+                        cooldown_dt = datetime.strptime(cooldown_str, "%Y-%m-%d %H:%M:%S")
+                        if agora >= cooldown_dt:
+                            cooldown_expirado = True
+                        else:
+                            restante = cooldown_dt - agora
+                            horas_rest, resto = divmod(int(restante.total_seconds()), 3600)
+                            min_rest, _ = divmod(resto, 60)
+                            print(f"[⏳] @{username} ainda em cooldown após recusa. Tempo restante: {horas_rest}h {min_rest}m (até {cooldown_str}).")
+                    except Exception:
+                        cooldown_expirado = True
+                else:
+                    cooldown_expirado = True
+
+                # Se o cooldown terminou, aciona a cascata para a próxima conta
+                if cooldown_expirado:
+                    print(f"[🚀] Cooldown de {COOLDOWN_HORAS}h finalizado para @{username}! Procurando próxima conta no pool...")
+
+                    # Descobre quais contas já foram recusadas para esse alvo
+                    contas_recusadas = [t.get("conta", "").lower() for t in alvo.get("tentativas", []) if t.get("status") == "REJEITADO"]
+
+                    # Contas disponíveis que ainda não foram recusadas
+                    candidatas = [c for c in pool if c.get("ativo", True) and c.get("sessionid") and c.get("user", "").lower() not in contas_recusadas]
+
+                    if candidatas:
+                        proxima_conta = candidatas[0]
+                        print(f"[*] Nova tentativa em cascata: enviando follow via @{proxima_conta.get('user')}...")
+                        res_follow = enviar_follow_com_conta(browser, proxima_conta, username)
+
+                        if res_follow in ["SUCESSO", "JA_SOLICITADO"]:
+                            alvo["conta_atual"] = proxima_conta.get("user")
+                            alvo["status"] = "AGUARDANDO_APROVACAO"
+                            alvo["cooldown_ate"] = None
+                            if "tentativas" not in alvo or not isinstance(alvo["tentativas"], list):
+                                alvo["tentativas"] = []
+                            alvo["tentativas"].append({
+                                "conta": proxima_conta.get("user"),
+                                "solicitado_em": agora.strftime("%Y-%m-%d %H:%M:%S"),
+                                "status": "SOLICITADO"
+                            })
+                            salvar_alvos(alvos)
+                            print(f"[+] Nova solicitação enviada com sucesso para @{username} pela conta @{proxima_conta.get('user')}!")
+                        elif res_follow == "JA_SEGUINDO":
+                            print(f"[🎉] A conta @{proxima_conta.get('user')} já segue @{username}! Baixando conteúdo...")
+                            ctx = criar_contexto_desktop(browser, proxima_conta)
+                            page = ctx.new_page()
+                            qtd = extrair_e_baixar_fotos(page, username)
+                            ctx.close()
+                            alvo["status"] = "CONCLUIDO"
+                            alvo["concluido_em"] = agora.strftime("%Y-%m-%d %H:%M:%S")
+                            salvar_alvos(alvos)
+                        else:
+                            print(f"[-] Não foi possível enviar solicitação via @{proxima_conta.get('user')} ({res_follow}).")
+                    else:
+                        alvo["status"] = "ESGOTADO"
+                        salvar_alvos(alvos)
+                        print(f"[-] Todas as contas disponíveis no pool ({len(pool)}) foram recusadas por @{username}. Alvo finalizado como ESGOTADO.")
 
         browser.close()
 
@@ -632,78 +872,236 @@ def fluxo_baixar_direto():
     target = input("\n>> Digite o username do perfil a baixar (sem @): ").strip().replace("@", "")
     if not target:
         return
-        
-    cfg = carregar_config()
+
+    conta_ativa = obter_conta_ativa()
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        ctx = criar_contexto_desktop(browser, cfg)
+        ctx = criar_contexto_desktop(browser, conta_ativa)
         page = ctx.new_page()
-        
+
         info = obter_info_perfil(page, target)
         if info["is_private"] and info["button_status"] != "SEGUINDO":
-            print(f"[!] O perfil @{target} é privado e você ainda não foi aceito. Envie a solicitação primeiro pela opção [1].")
+            print(f"[!] O perfil @{target} é privado e a conta @{conta_ativa.get('user')} ainda não foi aceita.")
+            print("Envie a solicitação primeiro pela opção [1].")
         else:
             scrolls_input = input(">> Quantas rolagens de tela fazer no feed? (Padrão 6, cada rolagem traz ~12 fotos): ").strip()
             max_s = int(scrolls_input) if scrolls_input.isdigit() else 6
             extrair_e_baixar_fotos(page, target, max_scrolls=max_s)
-            
+
         browser.close()
 
 def fluxo_historico():
-    """Exibe alvos monitorados e histórico salvo."""
+    """Exibe alvos monitorados, status detalhado da cascata e histórico salvo."""
     alvos = carregar_alvos()
-    print("\n" + "="*75)
-    print(f"{'ALVO':<22} | {'STATUS':<24} | {'SOLICITADO EM'}")
-    print("="*75)
+    print("\n" + "="*85)
+    print(f"{'ALVO':<18} | {'STATUS':<20} | {'CONTA ATUAL':<18} | {'COOLDOWN ATÉ / INFO'}")
+    print("="*85)
     if not alvos:
         print(" Nenhum alvo registrado ainda.")
     else:
         for a in alvos:
-            print(f"@{a['username']:<21} | {a['status']:<24} | {a.get('solicitado_em', '-')}")
-    print("="*75)
+            status = a.get("status", "-")
+            u_alvo = f"@{a['username']}"
+            c_atual = f"@{a.get('conta_atual', '-')}"
+            info_extra = "-"
+            if status == "REJEITADO_COOLDOWN":
+                info_extra = f"Até {a.get('cooldown_ate', '-')}"
+            elif status == "CONCLUIDO":
+                info_extra = f"Concluído ({a.get('qtd_fotos_baixadas', 0)} mídias)"
+            elif status == "ESGOTADO":
+                info_extra = "Todas as contas recusadas"
+            elif status == "AGUARDANDO_APROVACAO":
+                tentativas_qtd = len(a.get("tentativas", []))
+                info_extra = f"Tentativa #{tentativas_qtd}"
 
-def fluxo_configuracao():
-    """Permite alterar o sessionid ou dados da conta direto no terminal."""
-    cfg = carregar_config()
-    print("\n" + "="*50)
-    print(" 🔑 CONFIGURAÇÃO DA CONTA FONTOCHE (DESKTOP)")
-    print("="*50)
-    print(f" Usuário: @{cfg.get('user')}")
-    print(f" ID do Usuário: {cfg.get('ds_user_id')}")
-    print(f" SessionID atual: {cfg.get('sessionid')[:35]}...")
-    print("--------------------------------------------------")
-    novo_sess = input("Cole o novo SessionID (ou aperte Enter para manter): ").strip()
-    if novo_sess:
-        cfg["sessionid"] = novo_sess
-        # Atualiza ds_user_id se puder extrair do sessionid
-        if "%3A" in novo_sess or ":" in novo_sess:
-            uid = novo_sess.split("%3A")[0].split(":")[0]
-            if uid.isdigit():
-                cfg["ds_user_id"] = uid
-        salvar_config(cfg)
-        print("[+] SessionID atualizado com sucesso!")
+            print(f"{u_alvo:<18} | {status:<20} | {c_atual:<18} | {info_extra}")
+    print("="*85)
+
+# =====================================================================
+# GERENCIAMENTO DO POOL DE CONTAS (SUBMENU)
+# =====================================================================
+def fluxo_gerenciar_pool():
+    """Submenu para visualizar, adicionar, ativar/desativar e testar contas do pool."""
+    while True:
+        contas = carregar_pool_contas()
+        print("\n" + "="*70)
+        print(" 👥 GERENCIADOR DE POOL DE CONTAS (DESKTOP)")
+        print("="*70)
+        if not contas:
+            print(" Nenhuma conta cadastrada no pool.")
+        else:
+            for c in contas:
+                status_txt = "ATIVA ✔️" if c.get("ativo", True) else "INATIVA ❌"
+                sess_preview = c.get("sessionid", "")[:28] + "..." if c.get("sessionid") else "Sem sessionid"
+                print(f" [{c['id']}] @{c.get('user', 'sem_user'):<18} | {status_txt:<12} | {sess_preview}")
+        print("="*70)
+        print(" [1] ➕ Adicionar Nova Conta Fantoche ao Pool")
+        print(" [2] 🔄 Alternar Status (Ativar / Desativar Conta)")
+        print(" [3] ✏️ Atualizar SessionID de uma Conta Existente")
+        print(" [4] 🧪 Testar Login de Todas as Contas do Pool")
+        print(" [0] 🔙 Voltar ao Menu Principal")
+
+        opc = input("\n>> Escolha uma opção [0-4]: ").strip()
+
+        if opc == "1":
+            user_novo = input("\n>> Digite o username da nova conta (sem @): ").strip().replace("@", "")
+            if not user_novo:
+                print("Username inválido.")
+                continue
+            sess_novo = input(">> Cole o SessionID da nova conta: ").strip()
+            if not sess_novo:
+                print("SessionID não pode ser vazio.")
+                continue
+
+            uid_novo = ""
+            if "%3A" in sess_novo or ":" in sess_novo:
+                uid_part = sess_novo.split("%3A")[0].split(":")[0]
+                if uid_part.isdigit():
+                    uid_novo = uid_part
+
+            novo_id = max([c.get("id", 0) for c in contas], default=0) + 1
+            contas.append({
+                "id": novo_id,
+                "user": user_novo,
+                "ds_user_id": uid_novo,
+                "sessionid": sess_novo,
+                "ativo": True,
+                "adicionado_em": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            })
+            salvar_pool_contas(contas)
+            print(f"\n[✔] Conta @{user_novo} adicionada ao Pool com sucesso (ID #{novo_id})!")
+
+        elif opc == "2":
+            if not contas:
+                print("Não há contas para alterar.")
+                continue
+            id_input = input(">> Digite o ID da conta a alternar (Ativar/Desativar): ").strip()
+            if id_input.isdigit():
+                alvo_id = int(id_input)
+                encontrou = False
+                for c in contas:
+                    if c.get("id") == alvo_id:
+                        c["ativo"] = not c.get("ativo", True)
+                        novo_st = "ATIVA ✔️" if c["ativo"] else "INATIVA ❌"
+                        salvar_pool_contas(contas)
+                        print(f"[+] Status da conta @{c.get('user')} alterado para: {novo_st}")
+                        encontrou = True
+                        break
+                if not encontrou:
+                    print("ID não encontrado.")
+
+        elif opc == "3":
+            if not contas:
+                print("Não há contas para editar.")
+                continue
+            id_input = input(">> Digite o ID da conta que deseja atualizar o SessionID: ").strip()
+            if id_input.isdigit():
+                alvo_id = int(id_input)
+                conta_alvo = next((c for c in contas if c.get("id") == alvo_id), None)
+                if conta_alvo:
+                    novo_s = input(f">> Cole o novo SessionID para @{conta_alvo.get('user')}: ").strip()
+                    if novo_s:
+                        conta_alvo["sessionid"] = novo_s
+                        if "%3A" in novo_s or ":" in novo_s:
+                            uid = novo_s.split("%3A")[0].split(":")[0]
+                            if uid.isdigit():
+                                conta_alvo["ds_user_id"] = uid
+                        salvar_pool_contas(contas)
+                        print("[+] SessionID atualizado com sucesso!")
+                else:
+                    print("ID não encontrado.")
+
+        elif opc == "4":
+            print("\n[*] Testando conexão e autenticação de cada conta do pool...")
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                for c in contas:
+                    print(f"  [*] Testando sessão de @{c.get('user')}...")
+                    ctx = criar_contexto_desktop(browser, c)
+                    page = ctx.new_page()
+                    try:
+                        page.goto("https://www.instagram.com/", wait_until="domcontentloaded")
+                        page.wait_for_timeout(3000)
+                        content = page.content().lower()
+                        # Se estiver na página de login, sessão expirou
+                        if "accounts/login" in page.url or "cadastre-se" in content and "entrar" in content and "feed" not in content:
+                            print(f"  [❌] @{c.get('user')}: Sessão expirada ou deslogada.")
+                        else:
+                            print(f"  [✔] @{c.get('user')}: Sessão ATIVA e conectada com sucesso!")
+                    except Exception as e:
+                        print(f"  [-] Erro ao testar @{c.get('user')}: {e}")
+                    finally:
+                        ctx.close()
+                browser.close()
+            print("[*] Testes finalizados.")
+
+        elif opc == "0":
+            break
+
+# =====================================================================
+# MODO SENTINELA (LOOP AUTOMÁTICO 24/7)
+# =====================================================================
+def modo_sentinela():
+    """Executa checagens periódicas automáticas de alvos e cascata sem intervenção manual."""
+    print("\n" + "╔" + "═"*62 + "╗")
+    print("║                 👁️ MODO SENTINELA ATIVO (24/7)              ║")
+    print("║     Monitoramento Contínuo, Cascata e Download Automático    ║")
+    print("╚" + "═"*62 + "╝")
+
+    intervalo_input = input(">> Intervalo entre checagens em minutos (Padrão 30): ").strip()
+    intervalo_min = int(intervalo_input) if intervalo_input.isdigit() and int(intervalo_input) > 0 else 30
+    intervalo_seg = intervalo_min * 60
+
+    print(f"\n[*] Modo Sentinela iniciado! Intervalo de checagem: {intervalo_min} minutos.")
+    print("[*] Pressione Ctrl + C a qualquer momento para pausar e voltar ao menu principal.\n")
+
+    ciclo = 1
+    try:
+        while True:
+            agora_str = datetime.now().strftime("%H:%M:%S")
+            print("="*65)
+            print(f"[{agora_str}] [Ciclo #{ciclo}] Executando verificação de alvos...")
+            print("="*65)
+
+            try:
+                fluxo_verificar_e_baixar()
+            except Exception as e:
+                print(f"[-] Ocorreu um erro durante a verificação no ciclo #{ciclo}: {e}")
+
+            proxima_hora = (datetime.now() + timedelta(seconds=intervalo_seg)).strftime("%H:%M:%S")
+            print(f"\n[💤] Ciclo #{ciclo} concluído. Próxima checagem automática às {proxima_hora}...")
+
+            # Aguarda o intervalo dormindo em passos de 1s para responder de imediato ao Ctrl+C
+            for _ in range(intervalo_seg):
+                time.sleep(1)
+
+            ciclo += 1
+    except KeyboardInterrupt:
+        print("\n\n[i] Modo Sentinela pausado pelo usuário. Retornando ao menu principal...\n")
+        time.sleep(1)
 
 # =====================================================================
 # MENU PRINCIPAL
 # =====================================================================
 def main():
-    carregar_config()
     inicializar_banco()
-    
+    carregar_pool_contas()
+
     while True:
         print("\n" + "╔" + "═"*58 + "╗")
         print("║       🕵️‍♂️ SHARLOK INSTA - DESKTOP AUTOMATION (PC)         ║")
-        print("║          Follow, Monitoramento & Scraper Automático      ║")
+        print("║       Multi-Contas, Cascata & Monitoramento Sentinela    ║")
         print("╚" + "═"*58 + "╝")
         print(" [1] 🎯 Enviar Solicitação para Alvo Privado & Monitorar")
-        print(" [2] 🔄 Verificar se Alvos Aceitaram & Baixar Fotos Auto")
+        print(" [2] 🔄 Verificar Solicitações & Cascata de Rejeição")
         print(" [3] ⚡ Baixar Perfil Agora (Alvos Já Aceitos ou Públicos)")
-        print(" [4] 📋 Ver Histórico de Alvos e Downloads")
-        print(" [5] 🔑 Configurar / Atualizar SessionID da Conta")
+        print(" [4] 📋 Ver Histórico de Alvos e Status da Cascata")
+        print(" [5] 👥 Gerenciar Pool de Contas (Adicionar Conta 2, Listar)")
+        print(" [6] 👁️ Iniciar Modo Sentinela (Loop Automático 24/7)")
         print(" [0] 🚪 Sair")
-        
-        escolha = input("\n>> Escolha uma opção [0-5]: ").strip()
-        
+
+        escolha = input("\n>> Escolha uma opção [0-6]: ").strip()
+
         if escolha == "1":
             fluxo_seguir_alvo()
         elif escolha == "2":
@@ -713,7 +1111,9 @@ def main():
         elif escolha == "4":
             fluxo_historico()
         elif escolha == "5":
-            fluxo_configuracao()
+            fluxo_gerenciar_pool()
+        elif escolha == "6":
+            modo_sentinela()
         elif escolha == "0":
             print("\nEncerrando SharlokInsta Desktop. Até logo!\n")
             sys.exit(0)
@@ -722,3 +1122,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
