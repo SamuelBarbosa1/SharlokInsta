@@ -210,7 +210,7 @@ def registrar_novo_alvo(username, is_private=True, conta_usada=None):
     for a in alvos:
         if a["username"].lower() == username.lower():
             a["is_private"] = is_private
-            a["status"] = "AGUARDANDO_APROVACAO" if is_private else "SEGUINDO"
+            a["status"] = "AGUARDANDO_APROVACAO"
             a["conta_atual"] = conta_usada
             a["atualizado_em"] = agora
 
@@ -227,7 +227,7 @@ def registrar_novo_alvo(username, is_private=True, conta_usada=None):
     alvos.append({
         "username": username,
         "is_private": is_private,
-        "status": "AGUARDANDO_APROVACAO" if is_private else "SEGUINDO",
+        "status": "AGUARDANDO_APROVACAO",
         "conta_atual": conta_usada,
         "tentativas": [
             {
@@ -268,7 +268,16 @@ def obter_info_perfil(page, username):
     page.wait_for_timeout(3500)
     
     content = page.content().lower()
-    is_private = "esta conta é privada" in content or "this account is private" in content
+    is_private = (
+        "this profile is private" in content or
+        "este perfil é privado" in content or
+        "this account is private" in content or
+        "esta conta é privada" in content or
+        "follow to see their photos and videos" in content or
+        "siga para ver suas fotos e vídeos" in content or
+        "siga para ver suas fotos" in content
+    )
+
     
     # Detecta estado do botão de seguir
     btn_status = "Desconhecido"
@@ -278,7 +287,7 @@ def obter_info_perfil(page, username):
         if txt in ["follow", "seguir"]:
             btn_status = "NAO_SEGUINDO"
             break
-        elif txt in ["requested", "solicitado"]:
+        elif txt in ["requested", "solicitado", "solicitação enviada", "solicitada", "pedindo"]:
             btn_status = "SOLICITADO"
             break
         elif txt in ["following", "seguindo"]:
@@ -685,7 +694,6 @@ def fluxo_seguir_alvo():
 
         if info["button_status"] == "SEGUINDO":
             print(f"[i] A conta @{conta_selecionada.get('user')} já segue @{target}! O feed já está acessível.")
-            registrar_novo_alvo(target, is_private=info["is_private"], conta_usada=conta_selecionada.get("user"))
             baixar_agora = input("Deseja baixar o conteúdo agora? (s/n): ").strip().lower()
             if baixar_agora in ["s", "sim", "y"]:
                 extrair_e_baixar_fotos(page, target)
@@ -755,15 +763,15 @@ def fluxo_verificar_e_baixar():
             # ---------------------------------------------------------
             # CENÁRIO 1: ALVO AGUARDANDO APROVAÇÃO
             # ---------------------------------------------------------
-            if status_atual == "AGUARDANDO_APROVACAO":
+            if status_atual in ["AGUARDANDO_APROVACAO", "SEGUINDO"]:
                 ctx = criar_contexto_desktop(browser, conta_cfg)
                 page = ctx.new_page()
                 try:
                     info = obter_info_perfil(page, username)
                     btn_st = info["button_status"]
 
-                    # Caso A: Foi aceito ou perfil é aberto
-                    if btn_st == "SEGUINDO" or not info["is_private"]:
+                    # Caso A: Foi aceito
+                    if btn_st == "SEGUINDO":
                         print(f"[🎉] SUCESSO! @{username} ACEITOU a solicitação de @{conta_cfg.get('user')}!")
                         print(f"[*] Disparando download automático de todo o conteúdo...")
                         qtd = extrair_e_baixar_fotos(page, username)
