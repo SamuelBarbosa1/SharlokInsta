@@ -25,8 +25,10 @@ MONITOR_FILE = "alvos_monitorados.json"
 DB_NAME = "osint_coletas.db"
 ENV_FILE = ".env"
 
-# Cooldown em horas entre tentativas de contas diferentes após uma recusa
-COOLDOWN_HORAS = 2  # Padrão ajustado para 2 horas para testes do usuário
+# Cooldown entre tentativas de contas diferentes após uma recusa
+# (Ajustado para 3 MINUTOS para testes rápidos! Altere para 60 ou 120 min para produção)
+COOLDOWN_MINUTOS = 3
+
 
 def carregar_dotenv(caminho=".env"):
     """Carrega variáveis do arquivo .env sem exigir dependências externas."""
@@ -207,9 +209,11 @@ def registrar_novo_alvo(username, is_private=True, conta_usada=None):
     # Verifica se já existe
     for a in alvos:
         if a["username"].lower() == username.lower():
+            a["is_private"] = is_private
             a["status"] = "AGUARDANDO_APROVACAO" if is_private else "SEGUINDO"
             a["conta_atual"] = conta_usada
             a["atualizado_em"] = agora
+
             if "tentativas" not in a or not isinstance(a["tentativas"], list):
                 a["tentativas"] = []
             a["tentativas"].append({
@@ -778,7 +782,7 @@ def fluxo_verificar_e_baixar():
 
                     # Caso C: Botão voltou para 'Seguir' -> RECUSA DETECTADA!
                     elif btn_st == "NAO_SEGUINDO":
-                        cooldown_limite = agora + timedelta(hours=COOLDOWN_HORAS)
+                        cooldown_limite = agora + timedelta(minutes=COOLDOWN_MINUTOS)
                         cooldown_str = cooldown_limite.strftime("%Y-%m-%d %H:%M:%S")
                         alvo["status"] = "REJEITADO_COOLDOWN"
                         alvo["cooldown_ate"] = cooldown_str
@@ -792,7 +796,7 @@ def fluxo_verificar_e_baixar():
 
                         salvar_alvos(alvos)
                         print(f"[🚫] RECUSA DETECTADA! @{username} recusou a solicitação de @{conta_cfg.get('user')}.")
-                        print(f"[⏳] Entrando em cooldown de {COOLDOWN_HORAS}h. Próxima conta poderá tentar a partir de: {cooldown_str}")
+                        print(f"[⏳] Entrando em cooldown de {COOLDOWN_MINUTOS} min. Próxima conta poderá tentar a partir de: {cooldown_str}")
 
                     else:
                         print(f"[!] Situação atual de @{username}: {btn_st}")
@@ -813,9 +817,11 @@ def fluxo_verificar_e_baixar():
                             cooldown_expirado = True
                         else:
                             restante = cooldown_dt - agora
-                            horas_rest, resto = divmod(int(restante.total_seconds()), 3600)
-                            min_rest, _ = divmod(resto, 60)
-                            print(f"[⏳] @{username} ainda em cooldown após recusa. Tempo restante: {horas_rest}h {min_rest}m (até {cooldown_str}).")
+                            total_segs = int(restante.total_seconds())
+                            min_rest, seg_rest = divmod(total_segs, 60)
+                            horas_rest, min_rest = divmod(min_rest, 60)
+                            tempo_formatado = f"{horas_rest}h {min_rest}m" if horas_rest > 0 else f"{min_rest}m {seg_rest}s"
+                            print(f"[⏳] @{username} ainda em cooldown após recusa. Tempo restante: {tempo_formatado} (até {cooldown_str}).")
                     except Exception:
                         cooldown_expirado = True
                 else:
@@ -823,7 +829,8 @@ def fluxo_verificar_e_baixar():
 
                 # Se o cooldown terminou, aciona a cascata para a próxima conta
                 if cooldown_expirado:
-                    print(f"[🚀] Cooldown de {COOLDOWN_HORAS}h finalizado para @{username}! Procurando próxima conta no pool...")
+                    print(f"[🚀] Cooldown de {COOLDOWN_MINUTOS} min finalizado para @{username}! Procurando próxima conta no pool...")
+
 
                     # Descobre quais contas já foram recusadas para esse alvo
                     contas_recusadas = [t.get("conta", "").lower() for t in alvo.get("tentativas", []) if t.get("status") == "REJEITADO"]
