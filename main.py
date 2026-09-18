@@ -29,6 +29,10 @@ ENV_FILE = ".env"
 # (Ajustado para 3 MINUTOS para testes rápidos! Altere para 60 ou 120 min para produção)
 COOLDOWN_MINUTOS = 3
 
+# Tempo de espera em minutos para resposta do alvo (vácuo) antes de cancelar e tentar a próxima conta
+# (Ajustado para 3 MINUTOS para testes rápidos! Altere para 1440 min / 24h para produção)
+TIMEOUT_VACUO_MINUTOS = 3
+
 
 def carregar_dotenv(caminho=".env"):
     """Carrega variáveis do arquivo .env sem exigir dependências externas."""
@@ -649,6 +653,38 @@ def enviar_follow_com_conta(browser, conta_cfg, target_username):
         ctx.close()
     return resultado
 
+def cancelar_solicitacao_pendente(page):
+    """Clica no botão 'Solicitado' e confirma o cancelamento no Instagram Desktop."""
+    try:
+        clicked = False
+        for btn in page.query_selector_all("header button, main header button, button"):
+            txt = (btn.inner_text() or "").strip().lower()
+            if txt in ["requested", "solicitado", "solicitação enviada", "solicitada", "pedindo"]:
+                btn.click()
+                clicked = True
+                break
+
+        if not clicked:
+            return False
+
+        page.wait_for_timeout(2000)
+
+        # Se abriu um modal de confirmação no Instagram
+        modal = page.query_selector("div[role='dialog'], [role='dialog']")
+        if modal:
+            for m_btn in modal.query_selector_all("button"):
+                m_txt = (m_btn.inner_text() or "").strip().lower()
+                if any(k in m_txt for k in ["cancelar solicitação", "deixar de seguir", "unfollow", "cancel request"]):
+                    m_btn.click()
+                    page.wait_for_timeout(2500)
+                    return True
+
+        page.wait_for_timeout(2000)
+        return True
+    except Exception as e:
+        print(f"  [-] Erro ao tentar cancelar solicitação: {e}")
+        return False
+
 # =====================================================================
 # FLUXOS DE OPERAÇÃO DO MENU
 # =====================================================================
@@ -784,9 +820,88 @@ def fluxo_verificar_e_baixar():
                             alvo["tentativas"][-1]["status"] = "ACEITO"
                         salvar_alvos(alvos)
 
-                    # Caso B: Ainda pendente
+                    # Caso B: Ainda pendente (verifica timeout de vácuo)
                     elif btn_st == "SOLICITADO":
-                        print(f"[⏳] @{username} ainda não respondeu à solicitação de @{conta_cfg.get('user')}. Continuando espera.")
+                        solicitado_dt = None
+                        if "tentativas" in alvo and alvo["tentativas"]:
+                            dt_str = alvo["tentativas"][-1].get("solicitado_em")
+                            if dt_str:
+                                try:
+                                    solicitado_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
+                                except Exception:
+                                    pass
+                        if not solicitado_dt and alvo.get("solicitado_em"):
+                            try:
+                                solicitado_dt = datetime.strptime(alvo["solicitado_em"], "%Y-%m-%d %H:%M:%S")
+                            except Exception:
+                                pass
+                        if not solicitado_dt:
+                            solicitado_dt = agora
+
+                        tempo_passado = (agora - solicitado_dt).total_seconds()
+                        tempo_limite = TIMEOUT_VACUO_MINUTOS * 60
+
+                        if tempo_passado < tempo_limite:
+                            restante_seg = int(tempo_limite - tempo_passado)
+                            m_rest, s_rest = divmod(restante_seg, 60)
+                            print(f"[⏳] @{username} ainda não respondeu à solicitação de @{conta_cfg.get('user')}.")
+                            print(f"     Tempo em espera: {int(tempo_passado // 60)}m {int(tempo_passado % 60)}s (Timeout de vácuo em {m_rest}m {s_rest}s).")
+                        else:
+                            print(f"[⌛] VÁCUO DETECTADO! @{username} não respondeu à solicitação de @{conta_cfg.get('user')} após {TIMEOUT_VACUO_MINUTOS} min.")
+                            print(f"[*] Cancelando solicitação pendente no perfil com @{conta_cfg.get('user')}...")
+                            cancelado = cancelar_solicitacao_pendente(page)
+                            if cancelado:
+                                print(f"[✔] Solicitação de @{conta_cfg.get('user')} cancelada com sucesso no Instagram!")
+                            else:
+                                print(f"[!] Não foi possível confirmar clique de cancelamento, prosseguindo com a rotação.")
+
+                            if "tentativas" in alvo and alvo["tentativas"]:
+                                alvo["tentativas"][-1]["status"] = "CANCELADO_VACUO"
+                                alvo["tentativas"][-1]["cancelado_em"] = agora.strftime("%Y-%m-%d %H:%M:%S")
+
+                            # Fecha a página e contexto da conta atual antes de abrir a próxima
+                            page.close()
+                            ctx.close()
+                            ctx = None
+
+                            # Seleciona próxima conta no pool
+                            contas_usadas = [t.get("conta", "").lower() for t in alvo.get("tentativas", []) if t.get("status") in ["REJEITADO", "CANCELADO_VACUO"]]
+                            candidatas = [c for c in pool if c.get("ativo", True) and c.get("sessionid") and c.get("user", "").lower() not in contas_usadas]
+
+                            # Se todas as contas ativas já passaram pelo vácuo nesta rodada, reinicia o loop
+                            if not candidatas:
+                                print(f"[🔄] Todas as contas ativas do pool completaram a rodada de espera. Reiniciando o loop...")
+                                contas_recusadas = [t.get("conta", "").lower() for t in alvo.get("tentativas", []) if t.get("status") == "REJEITADO"]
+                                candidatas = [c for c in pool if c.get("ativo", True) and c.get("sessionid") and c.get("user", "").lower() not in contas_recusadas]
+                                if "tentativas" in alvo and alvo["tentativas"]:
+                                    for t in alvo["tentativas"]:
+                                        if t.get("status") == "CANCELADO_VACUO":
+                                            t["status"] = "VACUO_RODADA_ANTERIOR"
+
+                            if candidatas:
+                                proxima_conta = candidatas[0]
+                                print(f"[🚀] Rotacionando: enviando nova solicitação via @{proxima_conta.get('user')}...")
+                                res_follow = enviar_follow_com_conta(browser, proxima_conta, username)
+                                if res_follow in ["SUCESSO", "JA_SOLICITADO"]:
+                                    alvo["conta_atual"] = proxima_conta.get("user")
+                                    alvo["status"] = "AGUARDANDO_APROVACAO"
+                                    alvo["solicitado_em"] = agora.strftime("%Y-%m-%d %H:%M:%S")
+                                    alvo["cooldown_ate"] = None
+                                    if "tentativas" not in alvo or not isinstance(alvo["tentativas"], list):
+                                        alvo["tentativas"] = []
+                                    alvo["tentativas"].append({
+                                        "conta": proxima_conta.get("user"),
+                                        "solicitado_em": agora.strftime("%Y-%m-%d %H:%M:%S"),
+                                        "status": "SOLICITADO"
+                                    })
+                                    print(f"[+] Nova solicitação enviada com sucesso para @{username} pela conta @{proxima_conta.get('user')}!")
+                                else:
+                                    print(f"[-] Falha ao enviar solicitação via @{proxima_conta.get('user')} ({res_follow}).")
+                            else:
+                                alvo["status"] = "ESGOTADO"
+                                print(f"[-] Nenhuma conta disponível no pool para @{username}.")
+
+                            salvar_alvos(alvos)
 
                     # Caso C: Botão voltou para 'Seguir' -> RECUSA DETECTADA!
                     elif btn_st == "NAO_SEGUINDO":
@@ -809,7 +924,8 @@ def fluxo_verificar_e_baixar():
                     else:
                         print(f"[!] Situação atual de @{username}: {btn_st}")
                 finally:
-                    ctx.close()
+                    if ctx:
+                        ctx.close()
 
             # ---------------------------------------------------------
             # CENÁRIO 2: ALVO EM COOLDOWN DE REJEIÇÃO
@@ -927,7 +1043,16 @@ def fluxo_historico():
                 info_extra = "Todas as contas recusadas"
             elif status == "AGUARDANDO_APROVACAO":
                 tentativas_qtd = len(a.get("tentativas", []))
-                info_extra = f"Tentativa #{tentativas_qtd}"
+                solic_str = a.get("solicitado_em")
+                if solic_str:
+                    try:
+                        s_dt = datetime.strptime(solic_str, "%Y-%m-%d %H:%M:%S")
+                        decorrido = int((datetime.now() - s_dt).total_seconds() // 60)
+                        info_extra = f"Tentativa #{tentativas_qtd} (esperando há {decorrido} min)"
+                    except Exception:
+                        info_extra = f"Tentativa #{tentativas_qtd}"
+                else:
+                    info_extra = f"Tentativa #{tentativas_qtd}"
 
             print(f"{u_alvo:<18} | {status:<20} | {c_atual:<18} | {info_extra}")
     print("="*85)
