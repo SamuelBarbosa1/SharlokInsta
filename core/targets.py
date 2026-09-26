@@ -1,7 +1,7 @@
 import os
 import json
 from datetime import datetime
-from .config import MONITOR_FILE
+from .config import MONITOR_FILE, ALVOS_TXT_FILE
 from .pool import obter_conta_ativa
 
 def carregar_alvos():
@@ -66,3 +66,38 @@ def registrar_novo_alvo(username, is_private=True, conta_usada=None):
         "atualizado_em": agora
     })
     salvar_alvos(alvos)
+
+
+def carregar_alvos_do_arquivo(caminho=ALVOS_TXT_FILE):
+    """
+    Lê o arquivo alvos.txt e retorna uma lista de usernames limpos e únicos.
+    Ignora linhas vazias, espaços em branco e comentários iniciados com '#'.
+    """
+    if not os.path.exists(caminho):
+        return []
+
+    alvos = []
+    with open(caminho, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                user = line.replace("@", "").strip().lower()
+                if user and user not in alvos:
+                    alvos.append(user)
+    return alvos
+
+
+def distribuir_alvos_em_massa(alvos, pool_contas):
+    """
+    Distribui uma lista de alvos entre as contas ativas do pool em round-robin.
+    Retorna uma lista de tuplas: [(alvo_username, conta_dict), ...]
+    """
+    contas_ativas = [c for c in pool_contas if c.get("ativo", True) and c.get("sessionid")]
+    if not contas_ativas or not alvos:
+        return []
+
+    distribuicao = []
+    for idx, alvo in enumerate(alvos):
+        conta = contas_ativas[idx % len(contas_ativas)]
+        distribuicao.append((alvo, conta))
+    return distribuicao

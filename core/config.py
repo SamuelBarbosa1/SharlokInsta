@@ -5,6 +5,7 @@ import json
 CONFIG_FILE = "config_conta.json"
 CONTAS_POOL_FILE = "contas_pool.json"
 MONITOR_FILE = "alvos_monitorados.json"
+ALVOS_TXT_FILE = "alvos.txt"
 DB_NAME = "osint_coletas.db"
 ENV_FILE = ".env"
 
@@ -13,8 +14,12 @@ ENV_FILE = ".env"
 COOLDOWN_MINUTOS = 3
 
 # Tempo de espera em minutos para resposta do alvo (vácuo) antes de cancelar e tentar a próxima conta
-# (Ajustado para 3 MINUTOS para testes rápidos! Altere para 1440 min / 24h para produção)
+# (Ajustado para 3 MINUTOS para testes rápidos! Altere para 2880 min / 48h para produção)
 TIMEOUT_VACUO_MINUTOS = 3
+
+# Intervalo humanizado (em segundos) entre envios de solicitação em lote para evitar bloqueios
+DELAY_MIN_SEGS = 5
+DELAY_MAX_SEGS = 10
 
 
 def carregar_dotenv(caminho=".env"):

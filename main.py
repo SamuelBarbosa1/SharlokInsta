@@ -27,7 +27,7 @@ def main():
         print("║       🕵️‍♂️ SHARLOK INSTA - DESKTOP AUTOMATION (PC)         ║")
         print("║       Multi-Contas, Cascata & Monitoramento Sentinela    ║")
         print("╚" + "═"*58 + "╝")
-        print(" [1] 🎯 Enviar Solicitação para Alvo Privado & Monitorar")
+        print(" [1] 🎯 Enviar Solicitação para Alvos (Individual ou Em Massa)")
         print(" [2] 🔄 Verificar Solicitações & Cascata de Rejeição")
         print(" [3] ⚡ Baixar Perfil Agora (Alvos Já Aceitos ou Públicos)")
         print(" [4] 📋 Ver Histórico de Alvos e Status da Cascata")

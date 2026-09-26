@@ -1,3 +1,4 @@
+import random
 from datetime import datetime, timedelta
 from playwright.sync_api import sync_playwright
 from core.config import COOLDOWN_MINUTOS, TIMEOUT_VACUO_MINUTOS
@@ -124,8 +125,9 @@ def fluxo_verificar_e_baixar():
                                             t["status"] = "VACUO_RODADA_ANTERIOR"
 
                             if candidatas:
+                                random.shuffle(candidatas)
                                 proxima_conta = candidatas[0]
-                                print(f"[🚀] Rotacionando: enviando nova solicitação via @{proxima_conta.get('user')}...")
+                                print(f"[🚀] Rotacionando (sorteio aleatório): enviando nova solicitação via @{proxima_conta.get('user')}...")
                                 res_follow = enviar_follow_com_conta(browser, proxima_conta, username)
                                 if res_follow in ["SUCESSO", "JA_SOLICITADO"]:
                                     alvo["conta_atual"] = proxima_conta.get("user")
@@ -207,8 +209,9 @@ def fluxo_verificar_e_baixar():
                     candidatas = [c for c in pool if c.get("ativo", True) and c.get("sessionid") and c.get("user", "").lower() not in contas_recusadas]
 
                     if candidatas:
+                        random.shuffle(candidatas)
                         proxima_conta = candidatas[0]
-                        print(f"[*] Nova tentativa em cascata: enviando follow via @{proxima_conta.get('user')}...")
+                        print(f"[*] Nova tentativa em cascata (sorteio aleatório): enviando follow via @{proxima_conta.get('user')}...")
                         res_follow = enviar_follow_com_conta(browser, proxima_conta, username)
 
                         if res_follow in ["SUCESSO", "JA_SOLICITADO"]:

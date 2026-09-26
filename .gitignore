@@ -9,6 +9,7 @@ __pycache__/
 config_conta.json
 contas_pool.json
 alvos_monitorados.json
+alvos.txt
 
 
 # Downloads e mídias raspadas (evita repositório pesado)
