@@ -5,6 +5,7 @@ Guia prático e passo a passo para configuração, operação e extração de pe
 ---
 
 ## 📌 Sumário
+
 1. [Visão Geral](#-visão-geral)
 2. [Pré-requisitos](#-pré-requisitos)
 3. [Instalação e Configuração](#-instalação-e-configuração)
@@ -22,6 +23,7 @@ Guia prático e passo a passo para configuração, operação e extração de pe
 O **SharlokInsta** é uma ferramenta desktop desenvolvida para análise, extração OSINT e monitoramento de perfis do Instagram. Ele simula navegação humana legítima pelo Google Chrome Desktop (Windows), contornando limitações mobile.
 
 ### O que o sistema é capaz de fazer:
+
 - 📸 **Download de Feed:** Baixa todas as fotos na resolução máxima (1080x1080).
 - 🌟 **Download de Destaques (Highlights):** Mapeia todas as pastas e baixa fotos e vídeos (`.mp4`).
 - ⏱️ **Download de Stories (24h):** Captura stories ativos vigentes.
@@ -35,7 +37,7 @@ O **SharlokInsta** é uma ferramenta desktop desenvolvida para análise, extraç
 
 - **Sistema Operacional:** Windows 10/11, Linux ou macOS.
 - **Python:** Versão 3.10 ou superior ([Download Python](https://www.python.org/downloads/)).
-  > *Ao instalar no Windows, marque a caixinha **"Add Python to PATH"**.*
+  > _Ao instalar no Windows, marque a caixinha **"Add Python to PATH"**._
 - **Navegador Google Chrome** instalado.
 
 ---
@@ -43,13 +45,17 @@ O **SharlokInsta** é uma ferramenta desktop desenvolvida para análise, extraç
 ## 🚀 Instalação e Configuração
 
 ### 1. Clonar ou Extrair o Projeto
+
 Abra o terminal (PowerShell ou CMD) na pasta do projeto:
+
 ```powershell
 cd c:\caminho\para\SharlokInsta
 ```
 
 ### 2. Instalar as Dependências
+
 Execute o comando abaixo para instalar as bibliotecas necessárias:
+
 ```powershell
 pip install -r requirements.txt
 playwright install chromium
@@ -62,6 +68,7 @@ playwright install chromium
 O sistema não pede senhas: ele utiliza cookies de sessão já autenticados no navegador, sendo muito mais seguro contra bloqueios.
 
 ### Passo a passo no Chrome Desktop:
+
 1. Abra o Google Chrome no seu computador e faça login na sua conta do Instagram.
 2. Instale a extensão gratuita **Cookie-Editor** (disponível na Chrome Web Store).
 3. Estando na página inicial do Instagram (`instagram.com`), clique no ícone da extensão **Cookie-Editor**.
@@ -82,9 +89,11 @@ O sistema não pede senhas: ele utiliza cookies de sessão já autenticados no n
 ## 🧭 Menu Principal e Funcionalidades
 
 Ao executar:
+
 ```powershell
 python main.py
 ```
+
 Você verá a interface interativa:
 
 ```text
@@ -104,36 +113,47 @@ Você verá a interface interativa:
 ### Detalhes de Cada Opção:
 
 #### `[1] 🎯 Enviar Solicitação para Alvos`
+
 Permite abordar alvos privados:
+
 - **`[1] 👤 Abordar 1 Alvo Manualmente:`** Você digita o @ do alvo, escolhe qual conta fantoche utilizará e o robô envia a solicitação pelo Chrome Desktop.
 - **`[2] 📂 Carregar Lista de Alvos em Massa (alvos.txt):`** O robô lê uma lista de alvos e distribui proporcionalmente entre as contas ativas do pool.
 
 #### `[2] 🔄 Verificar Solicitações & Cascata de Rejeição`
+
 Faz uma varredura única em todos os alvos cadastrados:
+
 - Se foi aceito: dispara imediatamente o download de tudo (Feed, Destaques, Stories, Bio).
 - Se foi recusado: ativa o cooldown e prepara a próxima conta fantoche.
 - Se está em vácuo (sem resposta pelo tempo limite): cancela a solicitação e passa a vez para outro bot.
 
 #### `[3] ⚡ Baixar Perfil Agora`
+
 Extrai o conteúdo de qualquer perfil público ou privado que a sua conta já siga. Permite definir a quantidade de rolagens no feed (padrão 6 rolagens, ~70 fotos).
 
 #### `[4] 📋 Ver Histórico de Alvos e Status da Cascata`
+
 Mostra uma tabela organizada com:
+
 - Nome do alvo
 - Status atual (`AGUARDANDO_APROVACAO`, `REJEITADO_COOLDOWN`, `CONCLUIDO`, etc.)
 - Conta responsável atual
 - Tempo de espera ou quantidade de mídias salvas.
 
 #### `[5] 👥 Gerenciar Pool de Contas`
+
 Permite gerenciar seu exército de contas bots:
+
 - Adicionar novas contas informando `@` e `sessionid`.
 - Ativar ou desativar contas temporariamente.
 - Atualizar `sessionid` de contas cuja sessão tenha expirado.
 - **Testar Login de Todas as Contas:** O robô abre o navegador em segundo plano e confirma em tempo real se a sessão de cada conta está ativa ou desconectada.
 
 #### `[6] 👁️ Iniciar Modo Sentinela (Loop Automático 24/7)`
+
 O modo mais poderoso da ferramenta. Deixa o sistema rodando continuamente em segundo plano (você define o intervalo, ex: a cada 30 minutos). O robô verifica aceites, cancela vácuos, faz rotações de bots e baixa conteúdos sozinho!
-> *Para pausar o Modo Sentinela e voltar ao menu, pressione `Ctrl + C` no terminal.*
+
+> _Para pausar o Modo Sentinela e voltar ao menu, pressione `Ctrl + C` no terminal._
 
 ---
 
@@ -157,6 +177,7 @@ Em vez de adicionar alvos um por um, utilize o arquivo `alvos.txt` na raiz da pa
 ## 👁️ Modo Sentinela 24/7 (Automação Completa)
 
 Ao ativar a opção `[6]`:
+
 1. O sistema pergunta o intervalo desejado (ex: `30` minutos).
 2. Ele executa a checagem de todos os alvos.
 3. Se algum alvo aceitou $\rightarrow$ Baixa todo o perfil imediatamente.
@@ -191,16 +212,20 @@ downloads/
 ## ❓ Solução de Dúvidas Frequentes (FAQ)
 
 ### 1. O que acontece se a sessão expirar?
+
 Se o Instagram deslogar uma conta fantoche, acesse a opção `[5]` $\rightarrow$ `[4] Testar Login de Todas as Contas`. Ela indicará qual conta está desconectada. Basta pegar o novo `sessionid` no navegador e atualizar na opção `[5]` $\rightarrow$ `[3]`.
 
 ### 2. Minhas senhas ou contas correm risco?
+
 O sistema não armazena senhas em texto puro nem as envia para nenhum servidor externo. Todo o tráfego ocorre localmente entre o seu computador e os servidores oficiais do Instagram.
 
 ### 3. Como ajustar o tempo de cooldown ou limite de vácuo?
+
 No arquivo `core/config.py`:
+
 - `COOLDOWN_MINUTOS = 120`: Tempo de espera após uma recusa (padrão 2 horas).
 - `TIMEOUT_VACUO_MINUTOS = 2880`: Tempo máximo aguardando resposta (padrão 48 horas / 2 dias).
 
 ---
 
-*SharlokInsta Desktop - Desenvolvido para máxima discrição e eficiência OSINT.*
+_SharlokInsta Desktop - Desenvolvido para máxima discrição e eficiência OSINT._

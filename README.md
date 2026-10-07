@@ -56,6 +56,7 @@ SharlokInsta/
 ## 🚀 Instalação e Inicialização Rápida
 
 1. **Instale as dependências:**
+
    ```bash
    pip install -r requirements.txt
    playwright install chromium
@@ -63,6 +64,7 @@ SharlokInsta/
 
 2. **Configure o ambiente:**
    Copie o template `.env.example` para `.env` ou utilize a opção `[5]` no menu do programa para adicionar suas contas:
+
    ```bash
    cp .env.example .env
    ```
