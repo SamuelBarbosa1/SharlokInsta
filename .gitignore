@@ -6,10 +6,6 @@ __pycache__/
 # Segredos e configurações de conta (NÃO SUBIR PRO GITHUB)
 .env
 .env.local
-config_conta.json
-contas_pool.json
-alvos_monitorados.json
-alvos.txt
 
 
 # Downloads e mídias raspadas (evita repositório pesado)

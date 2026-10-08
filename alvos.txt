@@ -1,0 +1,10 @@
+# =====================================================================
+# LISTA DE ALVOS PARA MONITORAMENTO EM MASSA (SHARLOK INSTA)
+# =====================================================================
+# Insira um username do Instagram por linha (com ou sem @).
+# Linhas iniciadas com '#' ou em branco são ignoradas.
+#
+# Exemplos:
+# perfil_alvo_1
+# perfil_alvo_2
+# perfil_alvo_3
