@@ -196,6 +196,9 @@ downloads/
 └── @nome_do_alvo/
     ├── avatar_perfil.jpg          # Foto de perfil em resolução original
     ├── bio.txt                    # Relatório de texto com biografia, seguidores e links
+    ├── seguidores.txt             # Lista limpa de quem segue o alvo (@user por linha)
+    ├── seguindo.txt               # Lista limpa de quem o alvo segue (@user por linha)
+    ├── conexoes_mutuas.txt        # Quem o alvo segue e também é seguido de volta
     ├── dados_perfil.json          # Metadados completos estruturados em JSON
     ├── foto_1.jpg                 # Fotos do feed em alta definição (1080x1080)
     ├── foto_2.jpg
@@ -206,6 +209,8 @@ downloads/
         ├── story_1.jpg
         └── story_2.mp4
 ```
+
+> **🛡️ Proteção Anti-Falso Positivo:** Se o alvo privar a lista de seguidores/seguindo ou o Instagram exibir a mensagem *"Para proteger nossa comunidade, limitamos algumas coisas que você pode ver"*, o sistema detecta a restrição automaticamente e registra o status `RESTRITO` no relatório, evitando que o alvo seja erroneamente marcado como se tivesse 0 seguidores ou conexões vazias.
 
 ---
 
