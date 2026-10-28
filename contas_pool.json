@@ -1,18 +1,10 @@
 [
-  {
-    "id": 1,
-    "user": "",
-    "ds_user_id": "",
-    "sessionid": "",
-    "ativo": "",
-    "adicionado_em": ""
-  },
-  {
-    "id": 2,
-    "user": "",
-    "ds_user_id": "",
-    "sessionid": "",
-    "ativo": "",
-    "adicionado_em": ""
-  }
+    {
+        "id": 1,
+        "user": "samu_oliveira5",
+        "ds_user_id": "69735835949",
+        "sessionid": "69735835949%3AUujriuenx3Hcce%3A25%3AAYl-AMq8DYiwtLBrlvjnl6_mP0QXfn46d7NiU5uvRKA",
+        "ativo": "Sim",
+        "adicionado_em": "2026-10-28 00:15:48"
+    }
 ]

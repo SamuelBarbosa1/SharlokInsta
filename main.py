@@ -33,10 +33,11 @@ def main():
         print(" [4] 📋 Ver Histórico de Alvos e Status da Cascata")
         print(" [5] 👥 Gerenciar Pool de Contas (Adicionar Conta 2, Listar)")
         print(" [6] 👁️ Iniciar Modo Sentinela (Loop Automático 24/7)")
+        print(" [7] 🌐 Iniciar Painel Web (Dashboard no Navegador)")
         print(" [0] 🚪 Sair")
 
         try:
-            escolha = input("\n>> Escolha uma opção [0-6]: ").strip()
+            escolha = input("\n>> Escolha uma opção [0-7]: ").strip()
         except KeyboardInterrupt:
             print("\n\nEncerrando SharlokInsta Desktop. Até logo!\n")
             sys.exit(0)
@@ -53,6 +54,20 @@ def main():
             fluxo_gerenciar_pool()
         elif escolha == "6":
             modo_sentinela()
+        elif escolha == "7":
+            import webbrowser
+            print("\n" + "="*60)
+            print(" 🌐 PAINEL WEB SHARLOKINSTA (DASHBOARD LOCAL)")
+            print("="*60)
+            print(" Servidor rodando em: http://127.0.0.1:5000")
+            print(" Pressione Ctrl+C para encerrar o servidor e voltar ao menu.")
+            print("="*60 + "\n")
+            try:
+                webbrowser.open("http://127.0.0.1:5000")
+                from app import app
+                app.run(host="127.0.0.1", port=5000, debug=False)
+            except KeyboardInterrupt:
+                print("\n[*] Servidor Web encerrado.")
         elif escolha == "0":
             print("\nEncerrando SharlokInsta Desktop. Até logo!\n")
             sys.exit(0)

@@ -54,7 +54,7 @@ def fluxo_verificar_e_baixar():
 
                     # Caso A: Foi aceito
                     if btn_st == "SEGUINDO":
-                        print(f"[🎉] SUCESSO! @{username} ACEITOU a solicitação de @{conta_cfg.get('user')}!")
+                        print(f"[+] SUCESSO! @{username} ACEITOU a solicitação de @{conta_cfg.get('user')}!")
                         print(f"[*] Disparando download automático de todo o conteúdo...")
                         qtd = extrair_e_baixar_fotos(page, username)
                         alvo["status"] = "CONCLUIDO"
@@ -228,7 +228,7 @@ def fluxo_verificar_e_baixar():
                             salvar_alvos(alvos)
                             print(f"[+] Nova solicitação enviada com sucesso para @{username} pela conta @{proxima_conta.get('user')}!")
                         elif res_follow == "JA_SEGUINDO":
-                            print(f"[🎉] A conta @{proxima_conta.get('user')} já segue @{username}! Baixando conteúdo...")
+                            print(f"[+] A conta @{proxima_conta.get('user')} já segue @{username}! Baixando conteúdo...")
                             ctx = criar_contexto_desktop(browser, proxima_conta)
                             page = ctx.new_page()
                             qtd = extrair_e_baixar_fotos(page, username)

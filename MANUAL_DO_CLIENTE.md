@@ -155,6 +155,15 @@ O modo mais poderoso da ferramenta. Deixa o sistema rodando continuamente em seg
 
 > _Para pausar o Modo Sentinela e voltar ao menu, pressione `Ctrl + C` no terminal._
 
+#### `[7] 🌐 Iniciar Painel Web (Dashboard no Navegador)`
+
+Inicia um servidor local e abre automaticamente o painel visual no navegador (`http://localhost:5000`):
+- **Painel Geral:** Visão consolidada de bots, alvos e mídias salvas.
+- **Gerenciador de Pool:** Adição, edição, ativação/desativação e teste de contas com 1 clique.
+- **Monitoramento & Cascata:** Adicionar alvos e disparar verificações em segundo plano.
+- **Galeria de Downloads:** Visualização rápida das pastas de perfis extraídos.
+- **Terminal de Logs:** Console ao vivo atualizado em tempo real para acompanhar requisições e rotações.
+
 ---
 
 ## 📂 Importação em Massa de Alvos (`alvos.txt`)

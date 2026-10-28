@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SharlokInsta - Painel de Controle</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css?v=2">
+</head>
+<body>
+  <div class="layout">
+    <!-- BARRA LATERAL -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">🕵️‍♂️</div>
+        <div>
+          <h2>SharlokInsta</h2>
+          <span class="badge-sub">Automação Desktop</span>
+        </div>
+      </div>
+
+      <nav class="nav-links">
+        <button class="nav-btn active" data-tab="tab-dashboard">
+          <span class="icon">📊</span> Painel Geral
+        </button>
+        <button class="nav-btn" data-tab="tab-contas">
+          <span class="icon">👥</span> Pool de Contas
+        </button>
+        <button class="nav-btn" data-tab="tab-alvos">
+          <span class="icon">🎯</span> Alvos & Monitoramento
+        </button>
+        <button class="nav-btn" data-tab="tab-downloads">
+          <span class="icon">📁</span> Mídias Extraídas
+        </button>
+        <button class="nav-btn" data-tab="tab-logs">
+          <span class="icon">📜</span> Logs do Sistema
+          <span class="badge-count" id="badge-logs-count">0</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="sentinela-card">
+          <div class="sentinela-header">
+            <span class="status-dot" id="sentinela-dot"></span>
+            <span class="sentinela-label">Modo Sentinela 24/7</span>
+          </div>
+          <button id="btn-toggle-sentinela" class="btn-primary-sm">Ligar Sentinela</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- CONTEÚDO PRINCIPAL -->
+    <main class="main-content">
+      <!-- CABEÇALHO -->
+      <header class="topbar">
+        <div>
+          <h1 id="page-title">Painel Geral</h1>
+          <p class="subtitle">Visão consolidada de bots, alvos e status de extrações</p>
+        </div>
+        <div class="topbar-actions">
+          <button id="btn-quick-check" class="btn-secondary">🔄 Verificar Solicitações</button>
+          <button id="btn-open-scrape-modal" class="btn-primary">⚡ Baixar Perfil Agora</button>
+        </div>
+      </header>
+
+      <!-- ABA 1: DASHBOARD GERAL -->
+      <section id="tab-dashboard" class="tab-pane active">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-title">Contas no Pool</span>
+            <div class="stat-value" id="stat-contas">0</div>
+            <span class="stat-meta" id="stat-contas-ativas">0 ativas</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-title">Alvos Monitorados</span>
+            <div class="stat-value" id="stat-alvos">0</div>
+            <span class="stat-meta" id="stat-alvos-pendentes">0 pendentes</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-title">Alvos Aceitos / Concluídos</span>
+            <div class="stat-value highlight-success" id="stat-concluidos">0</div>
+            <span class="stat-meta">Extraídos com sucesso</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-title">Pastas Extraídas</span>
+            <div class="stat-value" id="stat-downloads">0</div>
+            <span class="stat-meta">Em /downloads</span>
+          </div>
+        </div>
+
+        <div class="dashboard-split">
+          <!-- Alvos Recentes -->
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Últimos Alvos Monitorados</h3>
+              <button class="link-btn" onclick="switchTab('tab-alvos')">Ver todos &rarr;</button>
+            </div>
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Alvo</th>
+                    <th>Conta Atual</th>
+                    <th>Status</th>
+                    <th>Atualizado</th>
+                  </tr>
+                </thead>
+                <tbody id="dash-alvos-tbody">
+                  <tr><td colspan="4" class="text-center">Carregando alvos...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Logs Recentes -->
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Console de Logs em Tempo Real</h3>
+              <button class="link-btn" onclick="switchTab('tab-logs')">Ver completo &rarr;</button>
+            </div>
+            <div class="terminal-box" id="dash-terminal"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABA 2: POOL DE CONTAS -->
+      <section id="tab-contas" class="tab-pane">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3>Contas Fantoches (Pool)</h3>
+              <p class="subtitle">Gerencie suas contas de rotação automática e cascata</p>
+            </div>
+            <button class="btn-primary" id="btn-add-conta">+ Adicionar Conta</button>
+          </div>
+
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Usuário</th>
+                  <th>Status</th>
+                  <th>SessionID</th>
+                  <th>Adicionado Em</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="contas-tbody">
+                <tr><td colspan="6" class="text-center">Carregando pool de contas...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABA 3: ALVOS -->
+      <section id="tab-alvos" class="tab-pane">
+        <div class="alvos-layout">
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Adicionar Alvos</h3>
+            </div>
+            <p class="subtitle">Insira um ou vários usernames por linha (com ou sem @)</p>
+            <textarea id="txt-novos-alvos" class="input-textarea" rows="6" placeholder="exemplo_alvo1&#10;exemplo_alvo2&#10;@alvo3"></textarea>
+            <button class="btn-primary mt-2" id="btn-salvar-alvos">Adicionar à Fila de Monitoramento</button>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <h3>Alvos Cadastrados</h3>
+                <span id="alvos-selection-count" class="stat-meta">0 selecionado(s)</span>
+              </div>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <button class="btn-secondary-sm" id="btn-delete-selected-alvos" style="color:var(--danger); border-color:var(--danger);">🗑️ Excluir Selecionados</button>
+                <button class="btn-secondary-sm" id="btn-clear-all-alvos" style="color:var(--danger); border-color:var(--danger);">⚠️ Limpar Tudo</button>
+                <button class="btn-secondary-sm" id="btn-refresh-alvos">Atualizar Lista</button>
+              </div>
+            </div>
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th style="width:36px;"><input type="checkbox" id="check-all-alvos" title="Marcar/Desmarcar todos"></th>
+                    <th>Username</th>
+                    <th>Conta Atual</th>
+                    <th>Status</th>
+                    <th>Tentativas</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="alvos-tbody">
+                  <tr><td colspan="6" class="text-center">Carregando lista de alvos...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABA 4: DOWNLOADS -->
+      <section id="tab-downloads" class="tab-pane">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3>Perfis e Mídias Extraídas</h3>
+              <p class="subtitle">Arquivos organizados na pasta local <code>downloads/</code></p>
+            </div>
+            <div style="display:flex; gap:6px; align-items:center;">
+              <button class="btn-secondary-sm" id="btn-clear-all-downloads" style="color:var(--danger); border-color:var(--danger);">⚠️ Excluir Todas as Mídias</button>
+              <button class="btn-secondary" id="btn-refresh-downloads">Atualizar Mídias</button>
+            </div>
+          </div>
+          <div class="downloads-grid" id="downloads-grid">
+            <p class="text-center">Nenhum perfil baixado ainda.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABA 5: LOGS COMPLETOS -->
+      <section id="tab-logs" class="tab-pane">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3>Logs Completos do Sistema</h3>
+              <p class="subtitle">Acompanhe todas as requisições, rotações e erros do Playwright</p>
+            </div>
+            <div>
+              <button class="btn-secondary-sm" id="btn-clear-logs">Limpar Logs</button>
+            </div>
+          </div>
+          <div class="terminal-box full-height" id="full-terminal"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- MODAL: BAIXAR DIRETO -->
+  <div class="modal" id="modal-scrape">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Extrair Perfil Direto</h3>
+        <button class="close-btn" onclick="fecharModal('modal-scrape')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="subtitle">Baixa Feed, Stories, Destaques, Seguidores e Seguindo de perfis abertos ou aprovados.</p>
+        <label class="label">Username do Alvo:</label>
+        <input type="text" id="input-direct-target" class="input-text" placeholder="ex: perfil_alvo (sem @)">
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="fecharModal('modal-scrape')">Cancelar</button>
+        <button class="btn-primary" id="btn-confirm-scrape">Iniciar Download</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: ADICIONAR / EDITAR CONTA -->
+  <div class="modal" id="modal-conta">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modal-conta-title">Adicionar Conta ao Pool</h3>
+        <button class="close-btn" onclick="fecharModal('modal-conta')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="modal-conta-id" value="">
+        <label class="label">Username:</label>
+        <input type="text" id="modal-conta-user" class="input-text" placeholder="conta_fantoche">
+        
+        <label class="label mt-2">ds_user_id (Opcional - extrai automaticamente do sessionid):</label>
+        <input type="text" id="modal-conta-ds" class="input-text" placeholder="ex: 69735835949">
+
+        <label class="label mt-2">SessionID (Cookie de Sessão):</label>
+        <textarea id="modal-conta-session" class="input-textarea" rows="3" placeholder="Cole o SessionID completo aqui..."></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="fecharModal('modal-conta')">Cancelar</button>
+        <button class="btn-primary" id="btn-salvar-modal-conta">Salvar Conta</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: INTERVALO SENTINELA -->
+  <div class="modal" id="modal-sentinela">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Configurar Modo Sentinela 24/7</h3>
+        <button class="close-btn" onclick="fecharModal('modal-sentinela')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="subtitle">O robô ficará varrendo aceites, cancelando vácuos e baixando perfis em segundo plano.</p>
+        <label class="label mt-2">Intervalo entre ciclos de checagem (em minutos):</label>
+        <input type="number" id="input-sentinela-intervalo" class="input-text" value="30" min="1" max="1440" placeholder="Padrão: 30 minutos">
+        <span class="stat-meta">Recomendado: 15 a 60 minutos para simular comportamento humano.</span>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="fecharModal('modal-sentinela')">Cancelar</button>
+        <button class="btn-primary" id="btn-confirm-sentinela">Iniciar Sentinela</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=2"></script>
+</body>
+</html>

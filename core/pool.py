@@ -4,17 +4,17 @@ from datetime import datetime
 from .config import CONTAS_POOL_FILE, carregar_config
 
 def carregar_pool_contas():
-    """Carrega todas as contas do pool. Se não existir, migra a conta do .env automaticamente."""
+    """Carrega todas as contas do pool. Se o arquivo existir, retorna exatamente seu conteúdo."""
     if os.path.exists(CONTAS_POOL_FILE):
         try:
             with open(CONTAS_POOL_FILE, "r", encoding="utf-8") as f:
                 contas = json.load(f)
-                if isinstance(contas, list) and len(contas) > 0:
+                if isinstance(contas, list):
                     return contas
         except Exception:
             pass
 
-    # Migração automática inicial da conta existente
+    # Inicialização caso o arquivo não exista
     cfg = carregar_config()
     contas = []
     if cfg.get("sessionid"):
@@ -26,7 +26,7 @@ def carregar_pool_contas():
             "ativo": True,
             "adicionado_em": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
-        salvar_pool_contas(contas)
+    salvar_pool_contas(contas)
     return contas
 
 
