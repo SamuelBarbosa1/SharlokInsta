@@ -5,21 +5,62 @@ import json
 CONFIG_FILE = "config_conta.json"
 CONTAS_POOL_FILE = "contas_pool.json"
 MONITOR_FILE = "alvos_monitorados.json"
+CASOS_FILE = "casos_investigacao.json"
 ALVOS_TXT_FILE = "alvos.txt"
 DB_NAME = "osint_coletas.db"
 ENV_FILE = ".env"
 
-# Cooldown entre tentativas de contas diferentes após uma recusa
-# (Ajustado para 3 MINUTOS para testes rápidos! Altere para 60 ou 120 min para produção)
-COOLDOWN_MINUTOS = 3
+# Controle de Visibilidade para Equipe Técnica vs Cliente Final
+# Altere para False quando for entregar o painel aos clientes finais para ocultar a aba "Atualizações"
+EXIBIR_ABA_ATUALIZACOES = True
 
-# Tempo de espera em minutos para resposta do alvo (vácuo) antes de cancelar e tentar a próxima conta
-# (Ajustado para 3 MINUTOS para testes rápidos! Altere para 2880 min / 48h para produção)
-TIMEOUT_VACUO_MINUTOS = 3
+# Valores padrão iniciais (podem ser alterados em tempo real na aba Configurações do Painel Web)
+COOLDOWN_MINUTOS = 120          # 2 horas após recusa
+TIMEOUT_VACUO_MINUTOS = 2880    # 48 horas (2 dias) aguardando resposta antes de rotacionar
+DELAY_MIN_SEGS = 5              # Delay mínimo anti-bloqueio entre envios
+DELAY_MAX_SEGS = 10             # Delay máximo anti-bloqueio entre envios
+MAX_SCROLLS_PADRAO = 6          # Rolagens no feed (~70 fotos)
 
-# Intervalo humanizado (em segundos) entre envios de solicitação em lote para evitar bloqueios
-DELAY_MIN_SEGS = 5
-DELAY_MAX_SEGS = 10
+
+def obter_parametros_automacao() -> dict:
+    """Retorna os parâmetros de tempo ativos (salvos no SQLite ou valores padrão)."""
+    padrao = {
+        "cooldown_minutos": COOLDOWN_MINUTOS,
+        "timeout_vacuo_minutos": TIMEOUT_VACUO_MINUTOS,
+        "delay_min_segs": DELAY_MIN_SEGS,
+        "delay_max_segs": DELAY_MAX_SEGS,
+        "max_scrolls_padrao": MAX_SCROLLS_PADRAO
+    }
+    try:
+        from .database import carregar_estado_db
+        salvos = carregar_estado_db("parametros_automacao")
+        if isinstance(salvos, dict):
+            padrao.update({k: int(v) for k, v in salvos.items() if k in padrao and str(v).isdigit()})
+    except Exception:
+        pass
+    return padrao
+
+
+def salvar_parametros_automacao(novos_params: dict) -> dict:
+    """Salva os parâmetros de automação no SQLite e retorna o dicionário consolidado."""
+    atuais = obter_parametros_automacao()
+    for chave in ["cooldown_minutos", "timeout_vacuo_minutos", "delay_min_segs", "delay_max_segs", "max_scrolls_padrao"]:
+        if chave in novos_params:
+            try:
+                val = int(novos_params[chave])
+                if val >= 1:
+                    atuais[chave] = val
+            except Exception:
+                pass
+    if atuais["delay_max_segs"] < atuais["delay_min_segs"]:
+        atuais["delay_max_segs"] = atuais["delay_min_segs"]
+
+    try:
+        from .database import salvar_estado_db
+        salvar_estado_db("parametros_automacao", atuais)
+    except Exception:
+        pass
+    return atuais
 
 
 def carregar_dotenv(caminho=".env"):

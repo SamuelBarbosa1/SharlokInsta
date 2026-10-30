@@ -1,0 +1,14 @@
+[
+    {
+        "id": 1,
+        "nome": "Caso 01",
+        "referencia": "Solicitação Pedro",
+        "descricao": "Investigar o o antonio",
+        "status": "EM_ANDAMENTO",
+        "alvos": [
+            "antonio_gallo77"
+        ],
+        "criado_em": "2026-10-29 23:47:56",
+        "atualizado_em": "2026-10-29 23:51:04"
+    }
+]

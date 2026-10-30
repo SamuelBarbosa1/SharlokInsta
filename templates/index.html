@@ -6,47 +6,103 @@
   <title>SharlokInsta - Painel de Controle</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=2">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      corePlugins: { preflight: false },
+      theme: {
+        extend: {
+          colors: {
+            gh: {
+              bg: '#0d1117',
+              panel: '#161b22',
+              card: '#21262d',
+              border: '#30363d',
+              text: '#c9d1d9',
+              title: '#f0f6fc',
+              muted: '#8b949e',
+              blue: '#58a6ff',
+              green: '#3fb950',
+              yellow: '#d29922',
+              red: '#f85149'
+            }
+          }
+        }
+      }
+    };
+  </script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="/static/style.css?v=7">
 </head>
 <body>
   <div class="layout">
     <!-- BARRA LATERAL -->
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-icon">🕵️‍♂️</div>
+        <div class="brand-icon">
+          <i data-lucide="radar"></i>
+        </div>
         <div>
           <h2>SharlokInsta</h2>
-          <span class="badge-sub">Automação Desktop</span>
+          <span class="badge-sub">Automação Desktop & Servidor</span>
         </div>
       </div>
 
       <nav class="nav-links">
         <button class="nav-btn active" data-tab="tab-dashboard">
-          <span class="icon">📊</span> Painel Geral
+          <i data-lucide="layout-dashboard"></i>
+          <span>Painel Geral</span>
+        </button>
+        <button class="nav-btn" data-tab="tab-casos">
+          <i data-lucide="briefcase"></i>
+          <span>Casos & Dossiês</span>
+          <span class="badge-count" id="badge-casos-count">0</span>
         </button>
         <button class="nav-btn" data-tab="tab-contas">
-          <span class="icon">👥</span> Pool de Contas
+          <i data-lucide="users"></i>
+          <span>Pool de Contas</span>
         </button>
         <button class="nav-btn" data-tab="tab-alvos">
-          <span class="icon">🎯</span> Alvos & Monitoramento
+          <i data-lucide="crosshair"></i>
+          <span>Alvos & Monitoramento</span>
         </button>
         <button class="nav-btn" data-tab="tab-downloads">
-          <span class="icon">📁</span> Mídias Extraídas
+          <i data-lucide="folder-down"></i>
+          <span>Mídias Extraídas</span>
         </button>
         <button class="nav-btn" data-tab="tab-logs">
-          <span class="icon">📜</span> Logs do Sistema
+          <i data-lucide="terminal"></i>
+          <span>Logs do Sistema</span>
           <span class="badge-count" id="badge-logs-count">0</span>
         </button>
+        <button class="nav-btn" data-tab="tab-config">
+          <i data-lucide="sliders-horizontal"></i>
+          <span>Configurações</span>
+        </button>
+        <button class="nav-btn" data-tab="tab-manual">
+          <i data-lucide="book-open-check"></i>
+          <span>Manual & Treinamento</span>
+        </button>
+        {% if exibir_atualizacoes %}
+        <button class="nav-btn" data-tab="tab-changelog">
+          <i data-lucide="git-commit-horizontal"></i>
+          <span>Atualizações</span>
+        </button>
+        {% endif %}
       </nav>
 
       <div class="sidebar-footer">
         <div class="sentinela-card">
           <div class="sentinela-header">
             <span class="status-dot" id="sentinela-dot"></span>
-            <span class="sentinela-label">Modo Sentinela 24/7</span>
+            <span class="sentinela-label" id="sentinela-label-txt">Modo Sentinela 24/7</span>
           </div>
-          <button id="btn-toggle-sentinela" class="btn-primary-sm">Ligar Sentinela</button>
+          <span class="stat-meta" id="sentinela-sub-txt" style="font-size:10px;">Roda em background (pode fechar a aba)</span>
+          <button id="btn-toggle-sentinela" class="btn-primary-sm">
+            <i data-lucide="power"></i>
+            <span>Ligar Sentinela</span>
+          </button>
         </div>
       </div>
     </aside>
@@ -57,36 +113,71 @@
       <header class="topbar">
         <div>
           <h1 id="page-title">Painel Geral</h1>
-          <p class="subtitle">Visão consolidada de bots, alvos e status de extrações</p>
+          <div class="status-bar-pills">
+            <span class="status-pill db-ok" id="pill-db-status">
+              <i data-lucide="database"></i>
+              <span>SQLite: ativo</span>
+            </span>
+            <span class="status-pill" id="pill-task-status">
+              <i data-lucide="check-circle-2"></i>
+              <span>Motor: Ocioso / Pronto</span>
+            </span>
+          </div>
         </div>
         <div class="topbar-actions">
-          <button id="btn-quick-check" class="btn-secondary">🔄 Verificar Solicitações</button>
-          <button id="btn-open-scrape-modal" class="btn-primary">⚡ Baixar Perfil Agora</button>
+          <button id="btn-quick-check" class="btn-secondary">
+            <i data-lucide="refresh-cw"></i>
+            <span>Verificar Solicitações</span>
+          </button>
+          <button id="btn-open-scrape-modal" class="btn-primary">
+            <i data-lucide="zap"></i>
+            <span>Baixar Perfil Agora</span>
+          </button>
         </div>
       </header>
 
       <!-- ABA 1: DASHBOARD GERAL -->
       <section id="tab-dashboard" class="tab-pane active">
-        <div class="stats-grid">
-          <div class="stat-card">
-            <span class="stat-title">Contas no Pool</span>
+        <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <div class="stat-card cursor-pointer hover:border-gh-blue/50 transition" onclick="switchTab('tab-casos')">
+            <div class="flex items-center justify-between">
+              <span class="stat-title">Casos / Dossiês</span>
+              <i data-lucide="briefcase" class="text-gh-blue"></i>
+            </div>
+            <div class="stat-value" id="stat-casos">0</div>
+            <span class="stat-meta" id="stat-casos-ativos">0 em andamento</span>
+          </div>
+          <div class="stat-card cursor-pointer hover:border-gh-blue/50 transition" onclick="switchTab('tab-contas')">
+            <div class="flex items-center justify-between">
+              <span class="stat-title">Contas no Pool</span>
+              <i data-lucide="users" class="text-gh-muted"></i>
+            </div>
             <div class="stat-value" id="stat-contas">0</div>
             <span class="stat-meta" id="stat-contas-ativas">0 ativas</span>
           </div>
-          <div class="stat-card">
-            <span class="stat-title">Alvos Monitorados</span>
+          <div class="stat-card cursor-pointer hover:border-gh-blue/50 transition" onclick="switchTab('tab-alvos')">
+            <div class="flex items-center justify-between">
+              <span class="stat-title">Alvos Monitorados</span>
+              <i data-lucide="crosshair" class="text-gh-blue"></i>
+            </div>
             <div class="stat-value" id="stat-alvos">0</div>
             <span class="stat-meta" id="stat-alvos-pendentes">0 pendentes</span>
           </div>
-          <div class="stat-card">
-            <span class="stat-title">Alvos Aceitos / Concluídos</span>
+          <div class="stat-card cursor-pointer hover:border-gh-blue/50 transition" onclick="switchTab('tab-alvos')">
+            <div class="flex items-center justify-between">
+              <span class="stat-title">Alvos Concluídos</span>
+              <i data-lucide="user-check" class="text-gh-green"></i>
+            </div>
             <div class="stat-value highlight-success" id="stat-concluidos">0</div>
             <span class="stat-meta">Extraídos com sucesso</span>
           </div>
-          <div class="stat-card">
-            <span class="stat-title">Pastas Extraídas</span>
+          <div class="stat-card cursor-pointer hover:border-gh-blue/50 transition" onclick="switchTab('tab-downloads')">
+            <div class="flex items-center justify-between">
+              <span class="stat-title">Pastas Extraídas</span>
+              <i data-lucide="folder-check" class="text-gh-muted"></i>
+            </div>
             <div class="stat-value" id="stat-downloads">0</div>
-            <span class="stat-meta">Em /downloads</span>
+            <span class="stat-meta">Salvas em /downloads</span>
           </div>
         </div>
 
@@ -94,8 +185,14 @@
           <!-- Alvos Recentes -->
           <div class="panel">
             <div class="panel-header">
-              <h3>Últimos Alvos Monitorados</h3>
-              <button class="link-btn" onclick="switchTab('tab-alvos')">Ver todos &rarr;</button>
+              <h3 class="flex items-center gap-2">
+                <i data-lucide="activity" class="text-gh-blue"></i>
+                <span>Últimos Alvos Monitorados</span>
+              </h3>
+              <button class="link-btn" onclick="switchTab('tab-alvos')">
+                <span>Ver todos</span>
+                <i data-lucide="arrow-right"></i>
+              </button>
             </div>
             <div class="table-container">
               <table class="data-table">
@@ -117,10 +214,56 @@
           <!-- Logs Recentes -->
           <div class="panel">
             <div class="panel-header">
-              <h3>Console de Logs em Tempo Real</h3>
-              <button class="link-btn" onclick="switchTab('tab-logs')">Ver completo &rarr;</button>
+              <h3 class="flex items-center gap-2">
+                <i data-lucide="terminal" class="text-gh-muted"></i>
+                <span>Console de Logs ao Vivo (Feed, Stories, Cascata)</span>
+              </h3>
+              <button class="link-btn" onclick="switchTab('tab-logs')">
+                <span>Tela cheia</span>
+                <i data-lucide="maximize-2"></i>
+              </button>
             </div>
             <div class="terminal-box" id="dash-terminal"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABA NOVA: CASOS & DOSSIÊS DE INVESTIGAÇÃO -->
+      <section id="tab-casos" class="tab-pane">
+        <div class="panel">
+          <div class="panel-header flex-wrap gap-3">
+            <div>
+              <h3 class="flex items-center gap-2">
+                <i data-lucide="briefcase" class="text-gh-blue"></i>
+                <span>Casos & Perfis de Investigação (Dossiês)</span>
+              </h3>
+              <p class="subtitle">Organize cada investigação em seu próprio perfil para nunca perder o vínculo entre casos, alvos investigados e mídias coletadas.</p>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <button class="btn-secondary" onclick="loadCasos()">
+                <i data-lucide="refresh-cw"></i>
+                <span>Atualizar</span>
+              </button>
+              <button class="btn-primary" id="btn-novo-caso">
+                <i data-lucide="folder-plus"></i>
+                <span>Novo Caso / Investigação</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4 pb-3 border-b border-gh-border">
+            <div class="max-w-sm flex-1">
+              <input type="text" id="input-search-casos" class="input-text" placeholder="Buscar caso, referência ou @investigado..." oninput="renderizarGridCasos()">
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <button class="filter-chip active" data-caso-filter="TODOS" onclick="filtrarStatusCasos('TODOS', this)">Todos os Casos</button>
+              <button class="filter-chip" data-caso-filter="EM_ANDAMENTO" onclick="filtrarStatusCasos('EM_ANDAMENTO', this)">Em Andamento</button>
+              <button class="filter-chip" data-caso-filter="CONCLUIDO" onclick="filtrarStatusCasos('CONCLUIDO', this)">Concluídos / Arquivados</button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" id="casos-grid">
+            <p class="text-center col-span-full text-gh-muted py-6">Carregando casos de investigação...</p>
           </div>
         </div>
       </section>
@@ -128,12 +271,24 @@
       <!-- ABA 2: POOL DE CONTAS -->
       <section id="tab-contas" class="tab-pane">
         <div class="panel">
-          <div class="panel-header">
+          <div class="panel-header flex-wrap gap-3">
             <div>
-              <h3>Contas Fantoches (Pool)</h3>
-              <p class="subtitle">Gerencie suas contas de rotação automática e cascata</p>
+              <h3 class="flex items-center gap-2">
+                <i data-lucide="users" class="text-gh-blue"></i>
+                <span>Contas Fantoches (Pool Multi-Contas)</span>
+              </h3>
+              <p class="subtitle">Adicione várias contas para rotação automática, distribuição em massa e cascata de rejeição</p>
             </div>
-            <button class="btn-primary" id="btn-add-conta">+ Adicionar Conta</button>
+            <div class="flex items-center gap-2">
+              <button class="btn-secondary" id="btn-testar-todas-contas">
+                <i data-lucide="shield-check"></i>
+                <span>Testar Todo o Pool</span>
+              </button>
+              <button class="btn-primary" id="btn-add-conta">
+                <i data-lucide="plus"></i>
+                <span>Adicionar Conta</span>
+              </button>
+            </div>
           </div>
 
           <div class="table-container">
@@ -142,14 +297,15 @@
                 <tr>
                   <th>ID</th>
                   <th>Usuário</th>
-                  <th>Status</th>
+                  <th>Status no Pool</th>
+                  <th>Sessão IG</th>
                   <th>SessionID</th>
                   <th>Adicionado Em</th>
                   <th>Ações</th>
                 </tr>
               </thead>
               <tbody id="contas-tbody">
-                <tr><td colspan="6" class="text-center">Carregando pool de contas...</td></tr>
+                <tr><td colspan="7" class="text-center">Carregando pool de contas...</td></tr>
               </tbody>
             </table>
           </div>
@@ -160,24 +316,79 @@
       <section id="tab-alvos" class="tab-pane">
         <div class="alvos-layout">
           <div class="panel">
-            <div class="panel-header">
-              <h3>Adicionar Alvos</h3>
+            <div class="panel-header" style="margin-bottom:8px;">
+              <h3 class="flex items-center gap-2">
+                <i data-lucide="user-plus" class="text-gh-blue"></i>
+                <span>Abordar / Adicionar Alvos</span>
+              </h3>
+              <button class="btn-secondary-sm" id="btn-import-alvos-txt" title="Carrega a lista do arquivo alvos.txt">
+                <i data-lucide="file-up"></i>
+                <span>Puxar alvos.txt</span>
+              </button>
             </div>
-            <p class="subtitle">Insira um ou vários usernames por linha (com ou sem @)</p>
+            <p class="subtitle" style="margin-bottom:12px;">Insira um ou mais @perfis (um por linha) e escolha como as contas do Pool vão seguir:</p>
+
+            <div class="flex items-center justify-between">
+              <label class="label">Vincular ao Caso / Investigação:</label>
+              <button type="button" class="link-btn text-[11px] mb-1" onclick="abrirModalNovoCaso()">+ Criar caso</button>
+            </div>
+            <select id="select-caso-novo-alvo" class="input-select mb-2.5">
+              <option value="">Sem caso específico (Geral)</option>
+            </select>
+
+            <label class="label">Modo de Abordagem das Contas:</label>
+            <select id="select-modo-abordagem" class="input-select">
+              <option value="distribuido">Round-Robin — Distribuir igualmente entre Contas Ativas</option>
+              <option value="aleatorio">Aleatório — Sorteio orgânico entre Contas Ativas</option>
+              <option value="especifico">Direcionado — Escolher Conta Específica...</option>
+            </select>
+
+            <div id="box-conta-especifica" class="mt-2" style="display:none;">
+              <label class="label">Selecione qual Conta Fantoche enviará o Follow:</label>
+              <select id="select-conta-alvo" class="input-select">
+                <option value="">Carregando contas...</option>
+              </select>
+            </div>
+
+            <label class="label mt-2">Lista de Alvos (1 por linha):</label>
             <textarea id="txt-novos-alvos" class="input-textarea" rows="6" placeholder="exemplo_alvo1&#10;exemplo_alvo2&#10;@alvo3"></textarea>
-            <button class="btn-primary mt-2" id="btn-salvar-alvos">Adicionar à Fila de Monitoramento</button>
+            <span class="stat-meta flex items-center gap-1.5 mt-1.5">
+              <i data-lucide="shield" style="width:12px;height:12px;"></i>
+              <span>Proteção anti-bloqueio ativa (delay humanizado configurável).</span>
+            </span>
+
+            <button class="btn-primary mt-3 w-full" id="btn-salvar-alvos">
+              <i data-lucide="send"></i>
+              <span>Enviar Solicitações & Monitorar</span>
+            </button>
           </div>
 
           <div class="panel">
-            <div class="panel-header">
+            <div class="panel-header flex-wrap gap-2">
               <div>
-                <h3>Alvos Cadastrados</h3>
+                <h3 class="flex items-center gap-2">
+                  <i data-lucide="git-branch" class="text-gh-blue"></i>
+                  <span>Alvos em Monitoramento & Cascata</span>
+                </h3>
                 <span id="alvos-selection-count" class="stat-meta">0 selecionado(s)</span>
               </div>
-              <div style="display:flex; gap:6px; align-items:center;">
-                <button class="btn-secondary-sm" id="btn-delete-selected-alvos" style="color:var(--danger); border-color:var(--danger);">🗑️ Excluir Selecionados</button>
-                <button class="btn-secondary-sm" id="btn-clear-all-alvos" style="color:var(--danger); border-color:var(--danger);">⚠️ Limpar Tudo</button>
-                <button class="btn-secondary-sm" id="btn-refresh-alvos">Atualizar Lista</button>
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <select id="select-filtro-caso-alvos" class="input-select" style="width:auto; padding:4px 10px; font-size:11.5px;" onchange="loadAlvos()">
+                  <option value="TODOS">Todos os Casos</option>
+                  <option value="SEM_CASO">Sem Caso Vinculado</option>
+                </select>
+                <button class="btn-secondary-sm" id="btn-delete-selected-alvos" style="color:var(--danger); border-color:rgba(248,81,73,0.45);">
+                  <i data-lucide="trash-2"></i>
+                  <span>Excluir Selecionados</span>
+                </button>
+                <button class="btn-secondary-sm" id="btn-clear-all-alvos" style="color:var(--danger); border-color:rgba(248,81,73,0.45);">
+                  <i data-lucide="octagon-x"></i>
+                  <span>Limpar Tudo</span>
+                </button>
+                <button class="btn-secondary-sm" id="btn-refresh-alvos">
+                  <i data-lucide="refresh-cw"></i>
+                  <span>Atualizar Lista</span>
+                </button>
               </div>
             </div>
             <div class="table-container">
@@ -186,14 +397,15 @@
                   <tr>
                     <th style="width:36px;"><input type="checkbox" id="check-all-alvos" title="Marcar/Desmarcar todos"></th>
                     <th>Username</th>
+                    <th>Caso / Dossiê</th>
                     <th>Conta Atual</th>
                     <th>Status</th>
-                    <th>Tentativas</th>
+                    <th>Histórico da Cascata</th>
                     <th>Ações</th>
                   </tr>
                 </thead>
                 <tbody id="alvos-tbody">
-                  <tr><td colspan="6" class="text-center">Carregando lista de alvos...</td></tr>
+                  <tr><td colspan="7" class="text-center">Carregando lista de alvos...</td></tr>
                 </tbody>
               </table>
             </div>
@@ -204,14 +416,27 @@
       <!-- ABA 4: DOWNLOADS -->
       <section id="tab-downloads" class="tab-pane">
         <div class="panel">
-          <div class="panel-header">
+          <div class="panel-header flex-wrap gap-2">
             <div>
-              <h3>Perfis e Mídias Extraídas</h3>
-              <p class="subtitle">Arquivos organizados na pasta local <code>downloads/</code></p>
+              <h3 class="flex items-center gap-2">
+                <i data-lucide="folder-down" class="text-gh-blue"></i>
+                <span>Perfis e Mídias Extraídas</span>
+              </h3>
+              <p class="subtitle">Visualize fotos, stories, biografia, baixe o pacote <code>.ZIP</code> ou exporte conexões em <code>.CSV</code> (Excel)</p>
             </div>
-            <div style="display:flex; gap:6px; align-items:center;">
-              <button class="btn-secondary-sm" id="btn-clear-all-downloads" style="color:var(--danger); border-color:var(--danger);">⚠️ Excluir Todas as Mídias</button>
-              <button class="btn-secondary" id="btn-refresh-downloads">Atualizar Mídias</button>
+            <div class="flex items-center gap-2 flex-wrap">
+              <select id="select-filtro-caso-downloads" class="input-select" style="width:auto; padding:6px 12px; font-size:12px;" onchange="loadDownloads()">
+                <option value="TODOS">Filtrar: Todos os Casos</option>
+                <option value="SEM_CASO">Sem Caso Vinculado</option>
+              </select>
+              <button class="btn-secondary-sm" id="btn-clear-all-downloads" style="color:var(--danger); border-color:rgba(248,81,73,0.45);">
+                <i data-lucide="trash-2"></i>
+                <span>Excluir Todas as Mídias</span>
+              </button>
+              <button class="btn-secondary" id="btn-refresh-downloads">
+                <i data-lucide="refresh-cw"></i>
+                <span>Atualizar Mídias</span>
+              </button>
             </div>
           </div>
           <div class="downloads-grid" id="downloads-grid">
@@ -223,18 +448,745 @@
       <!-- ABA 5: LOGS COMPLETOS -->
       <section id="tab-logs" class="tab-pane">
         <div class="panel">
-          <div class="panel-header">
+          <div class="panel-header flex-wrap gap-2">
             <div>
-              <h3>Logs Completos do Sistema</h3>
-              <p class="subtitle">Acompanhe todas as requisições, rotações e erros do Playwright</p>
+              <h3 class="flex items-center gap-2">
+                <i data-lucide="terminal" class="text-gh-blue"></i>
+                <span>Logs Completos do Sistema (Persistidos no SQLite)</span>
+              </h3>
+              <p class="subtitle">Exibe em tempo real: extração de Feed, Destaques, Stories, Seguidores/Seguindo e rotações de contas</p>
             </div>
-            <div>
-              <button class="btn-secondary-sm" id="btn-clear-logs">Limpar Logs</button>
+            <div class="log-filters flex-wrap">
+              <button class="log-filter-btn active" data-filter="TODOS" onclick="filtrarLogs('TODOS')">Todos</button>
+              <button class="log-filter-btn" data-filter="SUCESSO" onclick="filtrarLogs('SUCESSO')">Sucesso</button>
+              <button class="log-filter-btn" data-filter="AVISO" onclick="filtrarLogs('AVISO')">Avisos</button>
+              <button class="log-filter-btn" data-filter="ERRO" onclick="filtrarLogs('ERRO')">Erros</button>
+              <button class="btn-secondary-sm ml-1" id="btn-clear-logs">
+                <i data-lucide="eraser"></i>
+                <span>Limpar Logs</span>
+              </button>
             </div>
           </div>
           <div class="terminal-box full-height" id="full-terminal"></div>
         </div>
       </section>
+
+      <!-- ABA 6: CONFIGURAÇÕES DE TEMPO E AUTOMAÇÃO -->
+      <section id="tab-config" class="tab-pane">
+        <div class="panel">
+          <div class="panel-header flex-wrap gap-3">
+            <div>
+              <h3 class="flex items-center gap-2">
+                <i data-lucide="sliders-horizontal" class="text-gh-blue"></i>
+                <span>Parâmetros de Automação, Vácuo & Anti-Bloqueio</span>
+              </h3>
+              <p class="subtitle">Ajuste os tempos da cascata sem precisar editar código. As alterações valem imediatamente e ficam salvas no SQLite.</p>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <button class="btn-secondary-sm" onclick="aplicarPresetConfig('teste')">
+                <i data-lucide="zap"></i>
+                <span>Modo Teste Rápido (3 min)</span>
+              </button>
+              <button class="btn-secondary-sm" onclick="aplicarPresetConfig('producao')" style="border-color:rgba(63,185,80,0.45); color:var(--accent-green);">
+                <i data-lucide="shield-check"></i>
+                <span>Padrão Produção (2 Dias / 2h)</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="config-grid">
+            <div class="bg-gh-bg border border-gh-border rounded-lg p-4">
+              <label class="label flex items-center gap-1.5 text-gh-title">
+                <i data-lucide="clock" class="text-gh-blue" style="width:14px;height:14px;"></i>
+                <span>Tempo Limite de Vácuo (em minutos):</span>
+              </label>
+              <input type="number" id="cfg-timeout-vacuo" class="input-text mt-1" min="1" value="2880" oninput="atualizarLegendasTempo()">
+              <span class="stat-meta block mt-1.5 font-mono text-gh-blue" id="lbl-vacuo-humano">Equivale a: 48 horas (2 dias)</span>
+              <p class="stat-meta mt-1">Quanto tempo aguardar o alvo aceitar antes de cancelar o pedido pendente e rotacionar para outra conta do Pool.</p>
+            </div>
+
+            <div class="bg-gh-bg border border-gh-border rounded-lg p-4">
+              <label class="label flex items-center gap-1.5 text-gh-title">
+                <i data-lucide="shield-alert" class="text-gh-yellow" style="width:14px;height:14px;"></i>
+                <span>Tempo de Cooldown após Recusa (em minutos):</span>
+              </label>
+              <input type="number" id="cfg-cooldown" class="input-text mt-1" min="1" value="120" oninput="atualizarLegendasTempo()">
+              <span class="stat-meta block mt-1.5 font-mono text-gh-yellow" id="lbl-cooldown-humano">Equivale a: 2 horas</span>
+              <p class="stat-meta mt-1">Janela de espera de segurança caso o alvo rejeite a solicitação antes que a próxima conta tente seguir.</p>
+            </div>
+
+            <div class="bg-gh-bg border border-gh-border rounded-lg p-4">
+              <label class="label flex items-center gap-1.5 text-gh-title">
+                <i data-lucide="timer" class="text-gh-green" style="width:14px;height:14px;"></i>
+                <span>Delay Mínimo entre Envios em Lote (segundos):</span>
+              </label>
+              <input type="number" id="cfg-delay-min" class="input-text mt-1" min="1" max="300" value="5">
+              <p class="stat-meta mt-1.5">Intervalo mínimo humanizado entre um perfil e outro durante disparos em fila.</p>
+            </div>
+
+            <div class="bg-gh-bg border border-gh-border rounded-lg p-4">
+              <label class="label flex items-center gap-1.5 text-gh-title">
+                <i data-lucide="timer-reset" class="text-gh-green" style="width:14px;height:14px;"></i>
+                <span>Delay Máximo entre Envios em Lote (segundos):</span>
+              </label>
+              <input type="number" id="cfg-delay-max" class="input-text mt-1" min="1" max="600" value="10">
+              <p class="stat-meta mt-1.5">Teto máximo sorteado aleatoriamente a cada ação para evitar detecção de comportamento robótico.</p>
+            </div>
+
+            <div class="bg-gh-bg border border-gh-border rounded-lg p-4 md:col-span-2">
+              <label class="label flex items-center gap-1.5 text-gh-title">
+                <i data-lucide="images" class="text-gh-blue" style="width:14px;height:14px;"></i>
+                <span>Rolagens Padrão no Feed durante Extração:</span>
+              </label>
+              <input type="number" id="cfg-max-scrolls" class="input-text mt-1" min="1" max="60" value="6">
+              <p class="stat-meta mt-1.5">6 rolagens capturam em média ~70 fotos mais recentes em resolução máxima, além de Stories 24h, Destaques e Conexões.</p>
+            </div>
+          </div>
+
+          <div class="flex justify-end mt-5">
+            <button class="btn-primary" id="btn-salvar-config">
+              <i data-lucide="save"></i>
+              <span>Salvar Configurações</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABA 7: MANUAL & TREINAMENTO INTEGRADO (TAILWIND + LUCIDE) -->
+      <section id="tab-manual" class="tab-pane">
+        <!-- Cabeçalho da Central de Treinamento -->
+        <div class="bg-gh-panel border border-gh-border rounded-lg p-5">
+          <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b border-gh-border pb-4 mb-5">
+            <div class="flex items-start gap-3">
+              <div class="w-10 h-10 rounded-lg bg-gh-blue/10 border border-gh-blue/30 flex items-center justify-center text-gh-blue shrink-0 mt-0.5">
+                <i data-lucide="graduation-cap" style="width:20px;height:20px;"></i>
+              </div>
+              <div>
+                <h3 class="text-base font-semibold text-gh-title">Central de Treinamento & Manual Operacional</h3>
+                <p class="text-xs text-gh-muted mt-0.5">Documentação completa para operação segura de múltiplas contas, cascata inteligente e extração OSINT 24/7.</p>
+              </div>
+            </div>
+
+            <!-- Navegação interna do Manual -->
+            <div class="flex flex-wrap gap-2">
+              <button class="filter-chip active" onclick="alternarSecaoManual('trilha', this)">
+                <i data-lucide="compass"></i>
+                <span>Trilha Passo a Passo</span>
+              </button>
+              <button class="filter-chip" onclick="alternarSecaoManual('status', this)">
+                <i data-lucide="shield-check"></i>
+                <span>Status & Anti-Bloqueio</span>
+              </button>
+              <button class="filter-chip" onclick="alternarSecaoManual('faq', this)">
+                <i data-lucide="help-circle"></i>
+                <span>Dúvidas & Soluções (FAQ)</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- SUB-ABA 1: TRILHA PASSO A PASSO -->
+          <div id="manual-sec-trilha" class="space-y-4">
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <!-- Etapa 01 -->
+              <div class="bg-gh-bg border border-gh-border rounded-lg p-5 flex flex-col justify-between gap-4 hover:border-gh-blue/40 transition">
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between">
+                    <span class="inline-flex items-center gap-1.5 text-[11px] font-mono font-semibold text-gh-blue bg-gh-blue/10 border border-gh-blue/30 px-2.5 py-0.5 rounded">
+                      <i data-lucide="key-round" style="width:12px;height:12px;"></i>
+                      ETAPA 01 • AUTENTICAÇÃO POR COOKIE
+                    </span>
+                    <span class="text-[11px] text-gh-muted font-mono">Sem expor senha</span>
+                  </div>
+                  <h4 class="text-sm font-semibold text-gh-title">Como capturar o SessionID corretamente</h4>
+                  <p class="text-xs text-gh-muted leading-relaxed">
+                    O SharlokInsta opera via injeção de cookie de sessão (evitando desafios de login repetitivos do Instagram).
+                  </p>
+                  <div class="space-y-2 text-xs text-gh-text">
+                    <div class="bg-gh-panel border border-gh-border rounded p-3">
+                      <strong class="text-gh-title block mb-1">Método Recomendado (Janela Anônima + F12 ou Cookie-Editor):</strong>
+                      <ol class="list-decimal pl-4 space-y-1 text-gh-muted">
+                        <li>Abra uma <strong class="text-gh-text">Janela Anônima</strong> no Chrome/Edge e faça login na conta fantoche em <code>instagram.com</code>.</li>
+                        <li>Pressione <kbd class="px-1.5 py-0.5 bg-gh-card border border-gh-border rounded font-mono text-[10px] text-gh-title">F12</kbd> &rarr; aba <strong class="text-gh-text">Application (Aplicativo)</strong> &rarr; menu <strong class="text-gh-text">Cookies</strong> &rarr; <code>https://www.instagram.com</code> (ou use a extensão <em>Cookie-Editor</em>).</li>
+                        <li>Localize a chave <code>sessionid</code>, copie o valor completo e cadastre em <strong class="text-gh-text">Pool de Contas</strong>.</li>
+                      </ol>
+                    </div>
+                    <div class="flex items-start gap-2 bg-gh-yellow/10 border border-gh-yellow/30 rounded p-2.5 text-[11.5px] text-gh-yellow">
+                      <i data-lucide="alert-triangle" class="shrink-0 mt-0.5" style="width:14px;height:14px;"></i>
+                      <span><strong>Regra de Ouro:</strong> Após copiar o <code>sessionid</code>, <strong>NÃO clique em "Sair" (Log out)</strong> no Instagram! Apenas feche a janela anônima. Clicar em "Sair" invalida o cookie no servidor da Meta imediatamente.</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="pt-2 border-t border-gh-border flex justify-end">
+                  <button class="btn-secondary-sm" onclick="switchTab('tab-contas')">
+                    <span>Ir para Pool de Contas</span>
+                    <i data-lucide="arrow-up-right"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Etapa 02 -->
+              <div class="bg-gh-bg border border-gh-border rounded-lg p-5 flex flex-col justify-between gap-4 hover:border-gh-blue/40 transition">
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between">
+                    <span class="inline-flex items-center gap-1.5 text-[11px] font-mono font-semibold text-gh-green bg-gh-green/10 border border-gh-green/30 px-2.5 py-0.5 rounded">
+                      <i data-lucide="users" style="width:12px;height:12px;"></i>
+                      ETAPA 02 • POOL MULTI-CONTAS
+                    </span>
+                    <span class="text-[11px] text-gh-muted font-mono">Alta disponibilidade</span>
+                  </div>
+                  <h4 class="text-sm font-semibold text-gh-title">Preparando e validando seu exército de contas</h4>
+                  <p class="text-xs text-gh-muted leading-relaxed">
+                    Trabalhar com 3 ou mais contas no Pool multiplica a capacidade de coleta e alimenta a rotação automática caso um alvo recuse ou ignore o primeiro perfil.
+                  </p>
+                  <ul class="space-y-2 text-xs text-gh-text">
+                    <li class="flex items-start gap-2">
+                      <i data-lucide="shield-check" class="text-gh-green shrink-0 mt-0.5"></i>
+                      <span><strong>Auditoria em 1 Clique:</strong> Antes de disparar listas grandes, clique em <strong>Testar Todo o Pool</strong>. O motor verifica cada cookie silenciosamente e pausa contas expiradas para evitar falhas na fila.</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                      <i data-lucide="refresh-cw" class="text-gh-blue shrink-0 mt-0.5"></i>
+                      <span><strong>Renovação Rápida:</strong> Quando uma conta exibir <code>Expirada</code>, clique em <strong>Atualizar</strong> na linha dela e cole o novo <code>sessionid</code> — todo o histórico de alvos dela permanece intacto.</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                      <i data-lucide="pause-circle" class="text-gh-yellow shrink-0 mt-0.5"></i>
+                      <span><strong>Pausa Estratégica:</strong> Use o botão <strong>Pausar</strong> para retirar temporariamente uma conta da rotação sem excluí-la do banco.</span>
+                    </li>
+                  </ul>
+                </div>
+                <div class="pt-2 border-t border-gh-border flex justify-end">
+                  <button class="btn-secondary-sm" onclick="switchTab('tab-contas')">
+                    <span>Gerenciar Pool</span>
+                    <i data-lucide="arrow-up-right"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Etapa 03 -->
+              <div class="bg-gh-bg border border-gh-border rounded-lg p-5 flex flex-col justify-between gap-4 hover:border-gh-blue/40 transition">
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between">
+                    <span class="inline-flex items-center gap-1.5 text-[11px] font-mono font-semibold text-gh-blue bg-gh-blue/10 border border-gh-blue/30 px-2.5 py-0.5 rounded">
+                      <i data-lucide="git-branch" style="width:12px;height:12px;"></i>
+                      ETAPA 03 • MODOS DE ABORDAGEM
+                    </span>
+                    <span class="text-[11px] text-gh-muted font-mono">Cascata Inteligente</span>
+                  </div>
+                  <h4 class="text-sm font-semibold text-gh-title">Escolhendo a tática ideal de solicitação</h4>
+                  <div class="grid grid-cols-1 gap-2 text-xs">
+                    <div class="bg-gh-panel border border-gh-border rounded p-2.5">
+                      <strong class="text-gh-title">1. Round-Robin (Distribuído):</strong>
+                      <span class="text-gh-muted"> Divide uma lista grande (ex: 30 alvos para 3 contas = 10 cada) de forma equilibrada. Ideal para operações em lote.</span>
+                    </div>
+                    <div class="bg-gh-panel border border-gh-border rounded p-2.5">
+                      <strong class="text-gh-title">2. Sorteio Aleatório:</strong>
+                      <span class="text-gh-muted"> Escolhe aleatoriamente uma conta ativa por alvo, simulando padrão não linear.</span>
+                    </div>
+                    <div class="bg-gh-panel border border-gh-border rounded p-2.5">
+                      <strong class="text-gh-title">3. Conta Específica (Direcionado):</strong>
+                      <span class="text-gh-muted"> Ideal quando você possui uma conta fantoche temática (ex: mesma cidade ou nicho do alvo) para aumentar a taxa de aceite na 1ª tentativa.</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="pt-2 border-t border-gh-border flex justify-end">
+                  <button class="btn-secondary-sm" onclick="switchTab('tab-alvos')">
+                    <span>Abordar Alvos</span>
+                    <i data-lucide="arrow-up-right"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Etapa 04 -->
+              <div class="bg-gh-bg border border-gh-border rounded-lg p-5 flex flex-col justify-between gap-4 hover:border-gh-blue/40 transition">
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between">
+                    <span class="inline-flex items-center gap-1.5 text-[11px] font-mono font-semibold text-gh-green bg-gh-green/10 border border-gh-green/30 px-2.5 py-0.5 rounded">
+                      <i data-lucide="radar" style="width:12px;height:12px;"></i>
+                      ETAPA 04 • SENTINELA 24/7 & EXPORTAÇÃO
+                    </span>
+                    <span class="text-[11px] text-gh-muted font-mono">Persistência SQLite</span>
+                  </div>
+                  <h4 class="text-sm font-semibold text-gh-title">Monitoramento contínuo e análise de evidências</h4>
+                  <ul class="space-y-2 text-xs text-gh-text">
+                    <li class="flex items-start gap-2">
+                      <i data-lucide="clock" class="text-gh-blue shrink-0 mt-0.5"></i>
+                      <span><strong>Configuração de 2 Dias + Ciclos de 30 min:</strong> Em <em>Configurações</em>, mantenha o Vácuo em <code>2880 min (48h)</code> e ligue o <strong>Sentinela</strong> com ciclos de <code>30 min</code>. Assim que o alvo aceitar, a coleta inicia em até meia hora — garantindo a captura de <strong>Stories temporários de 24h</strong>!</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                      <i data-lucide="database" class="text-gh-green shrink-0 mt-0.5"></i>
+                      <span><strong>Navegador Independente:</strong> Com o servidor Python rodando, você pode fechar o navegador. Tudo é salvo em <code>osint_coletas.db</code>.</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                      <i data-lucide="file-spreadsheet" class="text-gh-blue shrink-0 mt-0.5"></i>
+                      <span><strong>Relatório Visual, CSV & ZIP:</strong> Em <em>Mídias Extraídas</em>, inspecione a galeria de fotos/vídeos, baixe a planilha <code>.CSV</code> com Mútuos/Seguidores/Seguindo ou faça download do pacote <code>.ZIP</code>.</span>
+                    </li>
+                  </ul>
+                </div>
+                <div class="pt-2 border-t border-gh-border flex justify-end gap-2">
+                  <button class="btn-secondary-sm" onclick="switchTab('tab-config')">
+                    <span>Ajustar Tempos</span>
+                    <i data-lucide="sliders-horizontal"></i>
+                  </button>
+                  <button class="btn-secondary-sm" onclick="switchTab('tab-downloads')">
+                    <span>Ver Extrações</span>
+                    <i data-lucide="folder-down"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SUB-ABA 2: DICIONÁRIO DE STATUS & PROTOCOLO ANTI-BLOQUEIO -->
+          <div id="manual-sec-status" style="display:none;" class="space-y-6">
+            <div>
+              <h4 class="text-sm font-semibold text-gh-title mb-3 flex items-center gap-2">
+                <i data-lucide="tags" class="text-gh-blue"></i>
+                <span>Dicionário Operacional de Status da Cascata</span>
+              </h4>
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+                <div class="bg-gh-bg border border-gh-border rounded-lg p-3.5 space-y-1.5">
+                  <span class="badge badge-yellow">AGUARDANDO_APROVACAO</span>
+                  <p class="text-gh-muted">Pedido de seguir enviado com sucesso pela conta fantoche atual. O Sentinela aguarda o aceite até atingir o tempo limite de vácuo.</p>
+                </div>
+                <div class="bg-gh-bg border border-gh-border rounded-lg p-3.5 space-y-1.5">
+                  <span class="badge badge-green">CONCLUIDO</span>
+                  <p class="text-gh-muted">Alvo aceitou a solicitação (ou era público) e a extração completa de Bio, Destaques, Stories, Feed e Conexões já foi salva.</p>
+                </div>
+                <div class="bg-gh-bg border border-gh-border rounded-lg p-3.5 space-y-1.5">
+                  <span class="badge badge-red">REJEITADO_COOLDOWN</span>
+                  <p class="text-gh-muted">O alvo recusou o pedido. O sistema aguarda o tempo de Cooldown (ex: 2h) antes de acionar automaticamente a próxima conta do Pool.</p>
+                </div>
+                <div class="bg-gh-bg border border-gh-border rounded-lg p-3.5 space-y-1.5">
+                  <span class="attempt-tag">VACUO_RODADA_ANTERIOR</span>
+                  <p class="text-gh-muted">O alvo não respondeu dentro do limite (ex: 48h). O robô retirou o pedido pendente daquela conta e rotacionou para o próximo bot.</p>
+                </div>
+                <div class="bg-gh-bg border border-gh-border rounded-lg p-3.5 space-y-1.5">
+                  <span class="badge badge-red">ESGOTADO</span>
+                  <p class="text-gh-muted">Todas as contas ativas do Pool já tentaram abordar este alvo sem aceite. Adicione uma nova conta ao Pool para reabrir tentativas.</p>
+                </div>
+                <div class="bg-gh-bg border border-gh-border rounded-lg p-3.5 space-y-1.5">
+                  <span class="badge badge-gray">RESTRITO (Conexões)</span>
+                  <p class="text-gh-muted">O Instagram ocultou parte da lista de seguidores do alvo por proteção nativa da plataforma. O sistema sinaliza isso sem gerar falso zero.</p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h4 class="text-sm font-semibold text-gh-title mb-3 flex items-center gap-2">
+                <i data-lucide="shield-check" class="text-gh-green"></i>
+                <span> Matriz Recomendada de Segurança Anti-Bloqueio</span>
+              </h4>
+              <div class="table-container bg-gh-bg border border-gh-border rounded-lg">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Parâmetro Operacional</th>
+                      <th>Contas Novas / Recém-Criadas</th>
+                      <th>Contas Aquecidas (+3 meses)</th>
+                      <th>Impacto na Operação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><strong>Solicitações de Follow / Dia</strong></td>
+                      <td>Até 8 – 12 alvos por conta</td>
+                      <td>Até 20 – 30 alvos por conta</td>
+                      <td>Evita bloqueio temporário de ação ("Tente novamente mais tarde")</td>
+                    </tr>
+                    <tr>
+                      <td><strong>Delay Mínimo / Máximo em Lote</strong></td>
+                      <td><code>10s</code> a <code>20s</code></td>
+                      <td><code>6s</code> a <code>12s</code></td>
+                      <td>Humaniza o intervalo entre visitas de perfil</td>
+                    </tr>
+                    <tr>
+                      <td><strong>Intervalo do Ciclo Sentinela</strong></td>
+                      <td><code>45</code> a <code>60 minutos</code></td>
+                      <td><code>30 minutos</code></td>
+                      <td>Garante captura de Stories 24h sem gerar excesso de requisições</td>
+                    </tr>
+                    <tr>
+                      <td><strong>Tempo Limite de Vácuo</strong></td>
+                      <td><code>2880 min</code> (48 horas)</td>
+                      <td><code>1440</code> a <code>2880 min</code> (24h–48h)</td>
+                      <td>Dá tempo natural para pessoas que entram pouco no Instagram aceitarem</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- SUB-ABA 3: FAQ ACORDEÃO INTERATIVO -->
+          <div id="manual-sec-faq" style="display:none;" class="space-y-2.5">
+            <div class="bg-gh-bg border border-gh-border rounded-lg overflow-hidden">
+              <button type="button" class="w-full flex items-center justify-between p-4 text-left text-xs font-semibold text-gh-title hover:bg-gh-card/60 transition cursor-pointer bg-transparent border-0" onclick="toggleFaqItem(this)">
+                <span class="flex items-center gap-2">
+                  <i data-lucide="help-circle" class="text-gh-blue"></i>
+                  <span>1. Cadastrei o SessionID e funcionou, mas horas depois apareceu "Expirada". O que houve?</span>
+                </span>
+                <i data-lucide="chevron-down" class="text-gh-muted transition-transform"></i>
+              </button>
+              <div class="px-4 pb-4 text-xs text-gh-muted leading-relaxed" style="display:block;">
+                Isso ocorre principalmente quando alguém clica em <strong>"Sair" (Log out)</strong> no navegador onde o cookie foi copiado, ou quando a senha da conta é alterada. Sempre faça login usando uma <strong>Janela Anônima</strong>, copie o <code>sessionid</code> e apenas <strong>feche a janela anônima</strong> (sem deslogar). Assim a sessão dura semanas ou meses!
+              </div>
+            </div>
+
+            <div class="bg-gh-bg border border-gh-border rounded-lg overflow-hidden">
+              <button type="button" class="w-full flex items-center justify-between p-4 text-left text-xs font-semibold text-gh-title hover:bg-gh-card/60 transition cursor-pointer bg-transparent border-0" onclick="toggleFaqItem(this)">
+                <span class="flex items-center gap-2">
+                  <i data-lucide="help-circle" class="text-gh-blue"></i>
+                  <span>2. Posso ligar o Sentinela para vigiar por 2 dias e fechar a aba do navegador?</span>
+                </span>
+                <i data-lucide="chevron-down" class="text-gh-muted transition-transform"></i>
+              </button>
+              <div class="px-4 pb-4 text-xs text-gh-muted leading-relaxed" style="display:none;">
+                <strong>Sim!</strong> A thread do Modo Sentinela 24/7 roda diretamente no servidor Python em background e grava todos os estados, extrações e logs no banco <code>osint_coletas.db</code>. Basta manter o processo Python (terminal ou serviço em nuvem/VPS) aberto; você pode fechar o navegador e reabrir <code>http://127.0.0.1:5000</code> dias depois para ver os resultados prontos.
+              </div>
+            </div>
+
+            <div class="bg-gh-bg border border-gh-border rounded-lg overflow-hidden">
+              <button type="button" class="w-full flex items-center justify-between p-4 text-left text-xs font-semibold text-gh-title hover:bg-gh-card/60 transition cursor-pointer bg-transparent border-0" onclick="toggleFaqItem(this)">
+                <span class="flex items-center gap-2">
+                  <i data-lucide="help-circle" class="text-gh-blue"></i>
+                  <span>3. Um alvo ficou como "ESGOTADO". Como faço para tentar abordá-lo novamente?</span>
+                </span>
+                <i data-lucide="chevron-down" class="text-gh-muted transition-transform"></i>
+              </button>
+              <div class="px-4 pb-4 text-xs text-gh-muted leading-relaxed" style="display:none;">
+                O status <code>ESGOTADO</code> significa que todas as contas ativas atuais já passaram pelo alvo. Você tem duas opções: <strong>(A)</strong> Adicionar uma nova conta fantoche ao Pool e clicar em <em>Verificar Solicitações</em>, ou <strong>(B)</strong> Excluir o alvo da tabela e adicioná-lo novamente caso queira reiniciar o ciclo do zero.
+              </div>
+            </div>
+
+            <div class="bg-gh-bg border border-gh-border rounded-lg overflow-hidden">
+              <button type="button" class="w-full flex items-center justify-between p-4 text-left text-xs font-semibold text-gh-title hover:bg-gh-card/60 transition cursor-pointer bg-transparent border-0" onclick="toggleFaqItem(this)">
+                <span class="flex items-center gap-2">
+                  <i data-lucide="help-circle" class="text-gh-blue"></i>
+                  <span>4. Como funciona o cruzamento de Amigos em Comum (Mútuos) na planilha CSV?</span>
+                </span>
+                <i data-lucide="chevron-down" class="text-gh-muted transition-transform"></i>
+              </button>
+              <div class="px-4 pb-4 text-xs text-gh-muted leading-relaxed" style="display:none;">
+                Durante a etapa <code>[5/5]</code> da extração, o sistema cruza automaticamente a lista de <em>Seguidores</em> com a lista de <em>Seguindo</em> do alvo. Quem aparece nas duas listas recebe a classificação <code>MUTUO (Segue e e seguido)</code> no topo da planilha <code>.CSV</code> — que já é gerada em formato <code>UTF-8-BOM</code> com separador ponto-e-vírgula (<code>;</code>) para abrir direto no Microsoft Excel em português.
+              </div>
+            </div>
+            <div class="bg-gh-bg border border-gh-border rounded-lg overflow-hidden">
+              <button type="button" class="w-full flex items-center justify-between p-4 text-left text-xs font-semibold text-gh-title hover:bg-gh-card/60 transition cursor-pointer bg-transparent border-0" onclick="toggleFaqItem(this)">
+                <span class="flex items-center gap-2">
+                  <i data-lucide="help-circle" class="text-gh-blue"></i>
+                  <span>5. Como organizar múltiplos casos sem misturar as contas investigadas?</span>
+                </span>
+                <i data-lucide="chevron-down" class="text-gh-muted transition-transform"></i>
+              </button>
+              <div class="px-4 pb-4 text-xs text-gh-muted leading-relaxed" style="display:none;">
+                Utilize a aba <strong>Casos & Dossiês</strong>! Você cria um Perfil de Investigação com o nome do caso, referência/cliente e informações básicas, e já adiciona ali dentro quais <code>@contas</code> fazem parte daquela investigação. Depois, tanto na tabela de <em>Alvos & Monitoramento</em> quanto em <em>Mídias Extraídas</em>, você pode filtrar por Caso ou baixar um <code>Dossie_Completo.zip</code> contendo todas as pastas daquele caso.
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      {% if exibir_atualizacoes %}
+      <!-- ABA 8: HISTÓRICO DE ATUALIZAÇÕES TÉCNICAS (VISÍVEL APENAS PARA EQUIPE TÉCNICA) -->
+      <section id="tab-changelog" class="tab-pane">
+        <!-- Mini KPIs de Engenharia -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div class="bg-gh-panel border border-gh-border rounded-lg p-3.5 flex items-center gap-3">
+            <div class="w-9 h-9 rounded-md bg-gh-blue/10 border border-gh-blue/30 flex items-center justify-center text-gh-blue">
+              <i data-lucide="git-pull-request" style="width:18px;height:18px;"></i>
+            </div>
+            <div>
+              <div class="text-[11px] text-gh-muted">Release Atual</div>
+              <div class="text-base font-bold font-mono text-gh-title">v2.6.0</div>
+            </div>
+          </div>
+          <div class="bg-gh-panel border border-gh-border rounded-lg p-3.5 flex items-center gap-3">
+            <div class="w-9 h-9 rounded-md bg-gh-green/10 border border-gh-green/30 flex items-center justify-center text-gh-green">
+              <i data-lucide="plus-circle" style="width:18px;height:18px;"></i>
+            </div>
+            <div>
+              <div class="text-[11px] text-gh-muted">Acrescentados</div>
+              <div class="text-base font-bold font-mono text-gh-green" id="chg-count-added">17</div>
+            </div>
+          </div>
+          <div class="bg-gh-panel border border-gh-border rounded-lg p-3.5 flex items-center gap-3">
+            <div class="w-9 h-9 rounded-md bg-gh-blue/10 border border-gh-blue/30 flex items-center justify-center text-gh-blue">
+              <i data-lucide="wrench" style="width:18px;height:18px;"></i>
+            </div>
+            <div>
+              <div class="text-[11px] text-gh-muted">Bugs Arrumados</div>
+              <div class="text-base font-bold font-mono text-gh-blue" id="chg-count-fixed">4</div>
+            </div>
+          </div>
+          <div class="bg-gh-panel border border-gh-border rounded-lg p-3.5 flex items-center gap-3">
+            <div class="w-9 h-9 rounded-md bg-gh-yellow/10 border border-gh-yellow/30 flex items-center justify-center text-gh-yellow">
+              <i data-lucide="layers" style="width:18px;height:18px;"></i>
+            </div>
+            <div>
+              <div class="text-[11px] text-gh-muted">Alterados & Removidos</div>
+              <div class="text-base font-bold font-mono text-gh-yellow" id="chg-count-other">5</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <!-- Banner de Controle de Visibilidade -->
+          <div class="tech-notice">
+            <div class="flex items-start gap-3">
+              <div class="w-8 h-8 rounded-md bg-gh-blue/15 border border-gh-blue/30 flex items-center justify-center text-gh-blue shrink-0 mt-0.5">
+                <i data-lucide="eye-off"></i>
+              </div>
+              <div class="tech-notice-text">
+                <strong class="text-gh-title block">Modo Equipe Técnica Ativo (Ocultável para Clientes Finais)</strong>
+                Quando for entregar o servidor para o cliente final, altere <code>EXIBIR_ABA_ATUALIZACOES = False</code> em <code>core/config.py</code>. A aba e o botão lateral deixam de ser renderizados automaticamente sem apagar o histórico interno.
+              </div>
+            </div>
+            <span class="badge badge-green">
+              <i data-lucide="code-2"></i>
+              <span>VISÍVEL (INTERNO)</span>
+            </span>
+          </div>
+
+          <!-- Barra de Busca + Filtros -->
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-5 pb-4 border-b border-gh-border">
+            <div class="relative flex-1 max-w-md">
+              <input type="text" id="input-search-changelog" class="input-text pl-3" placeholder="Buscar no histórico (ex: SQLite, CSV, Tailwind, Sessão, Cascata)..." oninput="aplicarFiltrosChangelog()">
+            </div>
+            <div class="log-filters flex-wrap" id="changelog-filter-bar">
+              <button class="filter-chip active" data-chg-filter="TODOS" onclick="filtrarChangelog('TODOS', this)">Todos</button>
+              <button class="filter-chip" data-chg-filter="ACRESCENTADO" onclick="filtrarChangelog('ACRESCENTADO', this)">
+                <i data-lucide="plus-circle" style="width:12px;height:12px;"></i>
+                <span>Acrescentado</span>
+              </button>
+              <button class="filter-chip" data-chg-filter="ARRUMADO" onclick="filtrarChangelog('ARRUMADO', this)">
+                <i data-lucide="wrench" style="width:12px;height:12px;"></i>
+                <span>Arrumado</span>
+              </button>
+              <button class="filter-chip" data-chg-filter="ALTERADO" onclick="filtrarChangelog('ALTERADO', this)">
+                <i data-lucide="refresh-cw" style="width:12px;height:12px;"></i>
+                <span>Alterado</span>
+              </button>
+              <button class="filter-chip" data-chg-filter="REMOVIDO" onclick="filtrarChangelog('REMOVIDO', this)">
+                <i data-lucide="trash-2" style="width:12px;height:12px;"></i>
+                <span>Removido</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Timeline Vertical de Releases -->
+          <div class="changelog-list relative border-l-2 border-gh-border ml-2 pl-5 space-y-5" id="changelog-list">
+            <!-- v2.6 -->
+            <div class="changelog-version-card relative">
+              <span class="absolute -left-[27px] top-5 w-3 h-3 rounded-full bg-gh-green ring-4 ring-gh-panel"></span>
+              <div class="changelog-header">
+                <h4>
+                  <span class="version-pill">v2.6.0</span>
+                  <span>Gestão de Casos & Perfis de Investigação (Dossiês Multi-Alvos)</span>
+                </h4>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="attempt-tag">core/cases.py</span>
+                  <span class="attempt-tag">app.py</span>
+                  <span class="attempt-tag">templates/index.html</span>
+                </div>
+              </div>
+              <div class="changelog-items">
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Módulo Casos & Dossiês de Investigação:</strong> Criação de perfis de casos contendo nome da operação/caso, referência/solicitante, observações básicas e lista dedicada de <code>@contas</code> investigadas persistida no SQLite (<code>osint_coletas.db</code>).</div>
+                </div>
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Vínculo e Filtro Transversal por Caso:</strong> Seletores e filtros por Caso integrados em <em>Alvos & Monitoramento</em>, <em>Mídias Extraídas</em> e <em>Extração Direta</em>, permitindo vincular ou mover alvos entre casos com 1 clique sem nunca misturar investigações.</div>
+                </div>
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Exportação de Dossiê Consolidado (<code>GET /api/casos/&lt;id&gt;/zip</code>):</strong> Gera um pacote <code>.ZIP</code> único reunindo o relatório descritivo do caso (<code>DOSSIE_DO_CASO.txt</code>) e todas as pastas de mídias/conexões dos investigados vinculados.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- v2.5 -->
+            <div class="changelog-version-card relative">
+              <span class="absolute -left-[27px] top-5 w-3 h-3 rounded-full bg-gh-blue ring-4 ring-gh-panel"></span>
+              <div class="changelog-header">
+                <h4>
+                  <span class="version-pill">v2.5.0</span>
+                  <span>Padronização Visual Tailwind CSS, Ícones Vetoriais Lucide & Nova Central de Treinamento</span>
+                </h4>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="attempt-tag">templates/index.html</span>
+                  <span class="attempt-tag">static/app.js</span>
+                  <span class="attempt-tag">static/style.css</span>
+                </div>
+              </div>
+              <div class="changelog-items">
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Integração Tailwind CSS + Biblioteca Vetorial Lucide Icons:</strong> Substituição completa de todos os ícones do painel, tabelas, cards de download e modais por ícones SVG vetoriais de alta precisão e layout responsivo utilitário.</div>
+                </div>
+                <div class="changelog-item" data-chg="ALTERADO">
+                  <span class="chg-tag chg-changed"><i data-lucide="refresh-cw"></i>ALTERADO</span>
+                  <div><strong>Nova Central de Treinamento Interativa:</strong> Reestruturação em 3 módulos navegáveis (<em>Trilha Passo a Passo</em> com guia de captura do SessionID sem invalidar cookie, <em>Dicionário de Status & Matriz Anti-Bloqueio</em> e <em>FAQ Acordeão</em>).</div>
+                </div>
+                <div class="changelog-item" data-chg="ALTERADO">
+                  <span class="chg-tag chg-changed"><i data-lucide="refresh-cw"></i>ALTERADO</span>
+                  <div><strong>Cards de Mídias Extraídas & Changelog Timeline:</strong> Novo layout nos cards de perfis baixados com grade de métricas e barra de ações alinhada, além de busca instantânea e KPIs na aba de Atualizações.</div>
+                </div>
+                <div class="changelog-item" data-chg="REMOVIDO">
+                  <span class="chg-tag chg-removed"><i data-lucide="trash-2"></i>REMOVIDO</span>
+                  <div><strong>Emojis nativos inconsistentes do Windows:</strong> Removidos todos os emojis coloridos de botões, menus, badges e seletores em favor de ícones monocromáticos limpos.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- v2.4 -->
+            <div class="changelog-version-card relative">
+              <span class="absolute -left-[27px] top-5 w-3 h-3 rounded-full bg-gh-blue ring-4 ring-gh-panel"></span>
+              <div class="changelog-header">
+                <h4>
+                  <span class="version-pill">v2.4.0</span>
+                  <span>Parâmetros Dinâmicos, Testador em Lote do Pool, Galeria Visual & Exportação CSV</span>
+                </h4>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="attempt-tag">core/config.py</span>
+                  <span class="attempt-tag">flows/monitor.py</span>
+                  <span class="attempt-tag">app.py</span>
+                </div>
+              </div>
+              <div class="changelog-items">
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Chave Técnica <code>EXIBIR_ABA_ATUALIZACOES</code>:</strong> Controle booleano em <code>core/config.py</code> que permite ocultar a aba de Atualizações ao entregar o sistema aos clientes.</div>
+                </div>
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Aba de Configurações Dinâmicas:</strong> Edição em tempo real de Limite de Vácuo (padrão 2 dias / 2880 min), Cooldown de Recusa (2h), Delay Anti-Bloqueio e Rolagens do Feed, com presets de 1 clique.</div>
+                </div>
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Auditoria em Lote do Pool (<code>POST /api/contas/testar_todas</code>):</strong> Valida o cookie <code>sessionid</code> de todas as contas em sequência, atualiza a coluna <em>Sessão IG</em> e pausa automaticamente contas expiradas.</div>
+                </div>
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Galeria de Miniaturas HD & Planilha <code>.CSV</code> para Excel:</strong> Visualização direta de Avatar, Destaques, Stories 24h e Fotos do Feed dentro do modal do perfil + rota <code>/api/downloads/&lt;user&gt;/csv</code> em UTF-8-BOM.</div>
+                </div>
+                <div class="changelog-item" data-chg="REMOVIDO">
+                  <span class="chg-tag chg-removed"><i data-lucide="trash-2"></i>REMOVIDO</span>
+                  <div><strong>Constantes estáticas engessadas na cascata:</strong> Removido uso de tempos fixos hardcoded em <code>flows/monitor.py</code>, passando a consultar o SQLite a cada ciclo.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- v2.3 -->
+            <div class="changelog-version-card relative">
+              <span class="absolute -left-[27px] top-5 w-3 h-3 rounded-full bg-gh-border ring-4 ring-gh-panel"></span>
+              <div class="changelog-header">
+                <h4>
+                  <span class="version-pill">v2.3.0</span>
+                  <span>Persistência SQLite para Servidor, 3 Modos de Abordagem & Streaming de Logs</span>
+                </h4>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="attempt-tag">core/database.py</span>
+                  <span class="attempt-tag">core/pool.py</span>
+                  <span class="attempt-tag">core/targets.py</span>
+                </div>
+              </div>
+              <div class="changelog-items">
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Sincronização Integral em SQLite (<code>osint_coletas.db</code>):</strong> Tabelas <code>estado_sistema</code>, <code>logs_sistema</code> e <code>coletas</code> garantindo que o Sentinela 24/7 opere mesmo com o navegador fechado.</div>
+                </div>
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Seletores de Estratégia de Envio:</strong> Abordagem <em>Round-Robin</em>, <em>Aleatória</em> ou <em>Conta Específica Direcionada</em> + importador direto do arquivo <code>alvos.txt</code>.</div>
+                </div>
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Interceptador <code>StdoutInterceptor</code> em Tempo Real:</strong> Transmissão ao vivo das etapas <code>[1/5]</code> a <code>[5/5]</code> do scraper para os terminais do painel Web com filtros por severidade.</div>
+                </div>
+                <div class="changelog-item" data-chg="ARRUMADO">
+                  <span class="chg-tag chg-fixed"><i data-lucide="wrench"></i>ARRUMADO</span>
+                  <div><strong>Bug de avaliação booleana em Contas Pausadas:</strong> Criado validador <code>conta_esta_ativa()</code> em <code>core/pool.py</code> corrigindo o problema onde <code>"ativo": "Não"</code> era tratado como verdadeiro.</div>
+                </div>
+                <div class="changelog-item" data-chg="ARRUMADO">
+                  <span class="chg-tag chg-fixed"><i data-lucide="wrench"></i>ARRUMADO</span>
+                  <div><strong>Falha <code>UnicodeEncodeError (cp1252)</code> no Windows:</strong> Reconfiguração UTF-8 tolerante a falhas nos fluxos de saída do terminal Windows.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- v2.2 -->
+            <div class="changelog-version-card relative">
+              <span class="absolute -left-[27px] top-5 w-3 h-3 rounded-full bg-gh-border ring-4 ring-gh-panel"></span>
+              <div class="changelog-header">
+                <h4>
+                  <span class="version-pill">v2.2.0</span>
+                  <span>Exclusão em Lote, Pacotes ZIP Remotos & Renovação de SessionID</span>
+                </h4>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="attempt-tag">app.py</span>
+                  <span class="attempt-tag">static/app.js</span>
+                </div>
+              </div>
+              <div class="changelog-items">
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Exclusão Individual, por Seleção e Limpeza Total:</strong> Checkboxes e ações em lote para Alvos Monitorados e Mídias Extraídas com atualização imediata dos indicadores do Painel Geral.</div>
+                </div>
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Empacotamento e Download <code>.ZIP</code> via HTTP:</strong> Permite baixar remotamente toda a pasta de evidências do perfil coletado no servidor.</div>
+                </div>
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Modal de Atualização de Sessão & Intervalo do Sentinela:</strong> Edição rápida do cookie <code>sessionid</code> no Pool e configuração do tempo de ciclo do Sentinela pelo navegador.</div>
+                </div>
+                <div class="changelog-item" data-chg="ARRUMADO">
+                  <span class="chg-tag chg-fixed"><i data-lucide="wrench"></i>ARRUMADO</span>
+                  <div><strong>Conflito de IDs ao Readicionar Contas & Disparo Real de Follow:</strong> Corrigida geração incremental de IDs no Pool e sincronizado o envio imediato de solicitações de seguir pelo painel Web.</div>
+                </div>
+                <div class="changelog-item" data-chg="ALTERADO">
+                  <span class="chg-tag chg-changed"><i data-lucide="refresh-cw"></i>ALTERADO</span>
+                  <div><strong>Padronização de Rotas REST de Remoção:</strong> Endpoints dedicados para limpeza individual e múltipla sem conflito de processos na porta <code>5000</code>.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- v2.0 - v2.1 -->
+            <div class="changelog-version-card relative">
+              <span class="absolute -left-[27px] top-5 w-3 h-3 rounded-full bg-gh-border ring-4 ring-gh-panel"></span>
+              <div class="changelog-header">
+                <h4>
+                  <span class="version-pill">v2.0 – v2.1</span>
+                  <span>Fundação do Painel Web, Motor Multi-Mídia OSINT & Cascata Anti-Vácuo</span>
+                </h4>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="attempt-tag">scraper/extractor.py</span>
+                  <span class="attempt-tag">scraper/profile.py</span>
+                  <span class="attempt-tag">flows/monitor.py</span>
+                </div>
+              </div>
+              <div class="changelog-items">
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Arquitetura Web Flask Assíncrona:</strong> Espelhamento completo das rotinas do terminal interativo (<code>main.py</code>) para execução em threads de segundo plano.</div>
+                </div>
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Extrator Completo 5 Etapas:</strong> Coleta de Avatar HD, Biografia/Contadores, Destaques, Stories 24h (fotos e vídeos), Feed de alta resolução e cruzamento de Seguidores, Seguindo e Mútuos.</div>
+                </div>
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Motor de Monitoramento em Cascata:</strong> Rotação automática entre contas fantoches após rejeição ou vácuo (com retirada prévia da solicitação pendente).</div>
+                </div>
+                <div class="changelog-item" data-chg="REMOVIDO">
+                  <span class="chg-tag chg-removed"><i data-lucide="trash-2"></i>REMOVIDO</span>
+                  <div><strong>Falsos positivos de 0 seguidores:</strong> Substituída leitura rasa por detecção explícita de listas protegidas pelo aviso de privacidade do Instagram (<code>RESTRITO</code>).</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      {% endif %}
     </main>
   </div>
 
@@ -242,17 +1194,36 @@
   <div class="modal" id="modal-scrape">
     <div class="modal-card">
       <div class="modal-header">
-        <h3>Extrair Perfil Direto</h3>
+        <h3 class="flex items-center gap-2">
+          <i data-lucide="zap" class="text-gh-green"></i>
+          <span>Extrair Perfil Agora</span>
+        </h3>
         <button class="close-btn" onclick="fecharModal('modal-scrape')">&times;</button>
       </div>
       <div class="modal-body">
-        <p class="subtitle">Baixa Feed, Stories, Destaques, Seguidores e Seguindo de perfis abertos ou aprovados.</p>
+        <p class="subtitle" style="margin-bottom:10px;">Baixa Avatar HD, Bio, Destaques, Stories 24h, Fotos do Feed, Seguidores, Seguindo e Mútuos.</p>
         <label class="label">Username do Alvo:</label>
         <input type="text" id="input-direct-target" class="input-text" placeholder="ex: perfil_alvo (sem @)">
+
+        <label class="label mt-2">Vincular ao Caso / Investigação (Opcional):</label>
+        <select id="select-caso-scrape" class="input-select">
+          <option value="">Sem caso específico (Geral)</option>
+        </select>
+
+        <label class="label mt-2">Conta Fantoche para Extração:</label>
+        <select id="select-conta-scrape" class="input-select">
+          <option value="">Automático (Usar conta vinculada ao alvo ou 1ª ativa)</option>
+        </select>
+
+        <label class="label mt-2">Quantidade de Rolagens no Feed (Padrão: 6 rolagens ≈ 70 fotos):</label>
+        <input type="number" id="input-scrape-scrolls" class="input-text" value="6" min="1" max="50">
       </div>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="fecharModal('modal-scrape')">Cancelar</button>
-        <button class="btn-primary" id="btn-confirm-scrape">Iniciar Download</button>
+        <button class="btn-primary" id="btn-confirm-scrape">
+          <i data-lucide="download"></i>
+          <span>Iniciar Extração</span>
+        </button>
       </div>
     </div>
   </div>
@@ -261,7 +1232,10 @@
   <div class="modal" id="modal-conta">
     <div class="modal-card">
       <div class="modal-header">
-        <h3 id="modal-conta-title">Adicionar Conta ao Pool</h3>
+        <h3 class="flex items-center gap-2" id="modal-conta-title">
+          <i data-lucide="user-plus" class="text-gh-blue"></i>
+          <span>Adicionar Conta ao Pool</span>
+        </h3>
         <button class="close-btn" onclick="fecharModal('modal-conta')">&times;</button>
       </div>
       <div class="modal-body">
@@ -277,7 +1251,10 @@
       </div>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="fecharModal('modal-conta')">Cancelar</button>
-        <button class="btn-primary" id="btn-salvar-modal-conta">Salvar Conta</button>
+        <button class="btn-primary" id="btn-salvar-modal-conta">
+          <i data-lucide="check"></i>
+          <span>Salvar Conta</span>
+        </button>
       </div>
     </div>
   </div>
@@ -286,22 +1263,140 @@
   <div class="modal" id="modal-sentinela">
     <div class="modal-card">
       <div class="modal-header">
-        <h3>Configurar Modo Sentinela 24/7</h3>
+        <h3 class="flex items-center gap-2">
+          <i data-lucide="radar" class="text-gh-green"></i>
+          <span>Configurar Modo Sentinela 24/7</span>
+        </h3>
         <button class="close-btn" onclick="fecharModal('modal-sentinela')">&times;</button>
       </div>
       <div class="modal-body">
-        <p class="subtitle">O robô ficará varrendo aceites, cancelando vácuos e baixando perfis em segundo plano.</p>
+        <p class="subtitle">O robô ficará varrendo aceites, cancelando vácuos, rotacionando contas na cascata e baixando perfis em segundo plano. Você pode fechar o navegador e voltar depois!</p>
         <label class="label mt-2">Intervalo entre ciclos de checagem (em minutos):</label>
         <input type="number" id="input-sentinela-intervalo" class="input-text" value="30" min="1" max="1440" placeholder="Padrão: 30 minutos">
-        <span class="stat-meta">Recomendado: 15 a 60 minutos para simular comportamento humano.</span>
+        <span class="stat-meta block mt-1.5">Recomendado: 30 a 60 minutos (assim ele vigia durante dias sem perder Stories de 24h!). Para ajustar o limite de 2 dias de vácuo, use a aba Configurações.</span>
       </div>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="fecharModal('modal-sentinela')">Cancelar</button>
-        <button class="btn-primary" id="btn-confirm-sentinela">Iniciar Sentinela</button>
+        <button class="btn-primary" id="btn-confirm-sentinela">
+          <i data-lucide="play"></i>
+          <span>Iniciar Sentinela</span>
+        </button>
       </div>
     </div>
   </div>
 
-  <script src="/static/app.js?v=2"></script>
+  <!-- MODAL: RELATÓRIO, GALERIA DE MÍDIAS E CONEXÕES DO PERFIL -->
+  <div class="modal" id="modal-detalhes-perfil">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h3 class="flex items-center gap-2" id="detalhes-perfil-titulo">
+          <i data-lucide="file-text" class="text-gh-blue"></i>
+          <span>Relatório do Perfil</span>
+        </h3>
+        <button class="close-btn" onclick="fecharModal('modal-detalhes-perfil')">&times;</button>
+      </div>
+      <div class="modal-body modal-scroll-body" id="detalhes-perfil-conteudo">
+        Carregando...
+      </div>
+      <div class="modal-footer" style="justify-content:space-between;">
+        <div id="detalhes-perfil-export-links" class="flex items-center gap-2 flex-wrap"></div>
+        <button class="btn-secondary" onclick="fecharModal('modal-detalhes-perfil')">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CRIAR / EDITAR CASO DE INVESTIGAÇÃO -->
+  <div class="modal" id="modal-novo-caso">
+    <div class="modal-card" style="width:540px; max-width:94vw;">
+      <div class="modal-header">
+        <h3 class="flex items-center gap-2" id="modal-caso-titulo">
+          <i data-lucide="briefcase" class="text-gh-blue"></i>
+          <span>Novo Caso / Perfil de Investigação</span>
+        </h3>
+        <button class="close-btn" onclick="fecharModal('modal-novo-caso')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="modal-caso-id" value="">
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label class="label">Nome do Caso / Investigação *:</label>
+            <input type="text" id="modal-caso-nome" class="input-text" placeholder="ex: Caso #014 - Operação Horizonte">
+          </div>
+          <div>
+            <label class="label">Referência / Cliente / Protocolo:</label>
+            <input type="text" id="modal-caso-ref" class="input-text" placeholder="ex: Solicitação Dr. Carlos / Proc. 882">
+          </div>
+        </div>
+
+        <div id="box-modal-caso-status" class="mt-2.5" style="display:none;">
+          <label class="label">Status do Caso:</label>
+          <select id="modal-caso-status" class="input-select">
+            <option value="EM_ANDAMENTO">Em Andamento</option>
+            <option value="CONCLUIDO">Concluído</option>
+            <option value="ARQUIVADO">Arquivado</option>
+          </select>
+        </div>
+
+        <label class="label mt-2.5">Informações Básicas / Contexto do Caso:</label>
+        <textarea id="modal-caso-desc" class="input-textarea" rows="3" placeholder="Anotações básicas sobre o caso, vínculo entre os investigados, objetivo da coleta..."></textarea>
+
+        <div id="box-modal-caso-alvos-iniciais" class="mt-3 pt-3 border-t border-gh-border">
+          <label class="label">Contas a serem investigadas neste Caso (1 @username por linha):</label>
+          <textarea id="modal-caso-alvos" class="input-textarea" rows="4" placeholder="@investigado_1&#10;@investigado_2&#10;Opcional: você também pode adicionar mais contas depois dentro do caso."></textarea>
+
+          <div class="mt-2.5 bg-gh-bg border border-gh-border rounded-lg p-3 space-y-2">
+            <label class="flex items-center gap-2 text-xs text-gh-title cursor-pointer">
+              <input type="checkbox" id="modal-caso-disparar" checked>
+              <span>Já enviar solicitações de seguir automaticamente para essas contas agora</span>
+            </label>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">
+              <div>
+                <label class="label text-[11px]">Modo de Abordagem:</label>
+                <select id="modal-caso-modo" class="input-select text-xs py-1.5" onchange="document.getElementById('box-modal-caso-conta').style.display = this.value === 'especifico' ? 'block' : 'none'">
+                  <option value="distribuido">Round-Robin (Distribuído)</option>
+                  <option value="aleatorio">Sorteio Aleatório</option>
+                  <option value="especifico">Conta Específica...</option>
+                </select>
+              </div>
+              <div id="box-modal-caso-conta" style="display:none;">
+                <label class="label text-[11px]">Conta do Pool:</label>
+                <select id="modal-caso-conta-user" class="input-select text-xs py-1.5"></select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="fecharModal('modal-novo-caso')">Cancelar</button>
+        <button class="btn-primary" id="btn-salvar-caso">
+          <i data-lucide="save"></i>
+          <span>Salvar Caso</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: DOSSIÊ DETALHADO DO CASO -->
+  <div class="modal" id="modal-dossie-caso">
+    <div class="modal-card modal-lg" style="width:860px;">
+      <div class="modal-header">
+        <h3 class="flex items-center gap-2" id="dossie-caso-titulo">
+          <i data-lucide="folder-open" class="text-gh-blue"></i>
+          <span>Dossiê do Caso</span>
+        </h3>
+        <button class="close-btn" onclick="fecharModal('modal-dossie-caso')">&times;</button>
+      </div>
+      <div class="modal-body modal-scroll-body" id="dossie-caso-conteudo">
+        Carregando dossiê...
+      </div>
+      <div class="modal-footer" style="justify-content:space-between;">
+        <div id="dossie-caso-export-bar" class="flex items-center gap-2 flex-wrap"></div>
+        <button class="btn-secondary" onclick="fecharModal('modal-dossie-caso')">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=7"></script>
 </body>
 </html>

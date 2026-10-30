@@ -100,7 +100,7 @@ def extrair_lista_usuarios_modal(page, username_alvo, tipo="followers", max_scro
     
     eh_restrito = any(frase in modal_text for frase in frases_restricao)
     if eh_restrito:
-        print(f"  [⚠️] ALERTA DE PRIVACIDADE: O Instagram restringiu a visualização de {tipo_label} de @{username_alvo}!")
+        print(f"  [!] ALERTA DE PRIVACIDADE: O Instagram restringiu a visualização de {tipo_label} de @{username_alvo}!")
         print(f"      (Mensagem detectada: 'Para proteger nossa comunidade, limitamos...')")
         _fechar_modal(page, modal_el)
         return {
@@ -112,8 +112,9 @@ def extrair_lista_usuarios_modal(page, username_alvo, tipo="followers", max_scro
     usuarios_coletados = []
     seen = set()
 
-    for _ in range(max_scrolls):
+    for scroll_idx in range(1, max_scrolls + 1):
         links_modal = modal_el.query_selector_all("a[role='link'], a[href^='/']")
+        antes = len(usuarios_coletados)
         for lk in links_modal:
             href = lk.get_attribute("href") or ""
             partes = [p for p in href.strip("/").split("/") if p]
@@ -123,6 +124,9 @@ def extrair_lista_usuarios_modal(page, username_alvo, tipo="followers", max_scro
                     if uname not in seen:
                         seen.add(uname)
                         usuarios_coletados.append(uname)
+
+        if scroll_idx % 4 == 0 and len(usuarios_coletados) > antes:
+            print(f"  [*] Coletando {tipo_label} de @{username_alvo}: {len(usuarios_coletados)} perfis mapeados...")
 
         # Rola o container interno
         page.evaluate("""() => {
@@ -145,7 +149,7 @@ def extrair_lista_usuarios_modal(page, username_alvo, tipo="followers", max_scro
     _fechar_modal(page, modal_el)
 
     status = "SUCESSO" if usuarios_coletados else "VAZIO"
-    print(f"  [✔] {tipo_label} coletados: {len(usuarios_coletados)} contas encontradas.")
+    print(f"  [+] {tipo_label} coletados de @{username_alvo}: {len(usuarios_coletados)} contas encontradas.")
     return {
         "status": status,
         "motivo": "OK" if usuarios_coletados else "Nenhum usuário listado",
@@ -166,7 +170,7 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
     print("="*60)
 
     # 1. CABEÇALHO, BIOGRAFIA E AVATAR HD
-    print("\n[1/4] Extraindo Biografia e Dados do Perfil...")
+    print("\n[1/5] Extraindo Biografia e Dados do Perfil...")
     header_el = page.query_selector("header")
     header_text = header_el.inner_text() if header_el else ""
 
@@ -227,7 +231,7 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
     print("  [>] Arquivo bio.txt gerado com sucesso!")
 
     # 2. DESTAQUES (HIGHLIGHTS)
-    print("\n[2/4] Verificando Destaques (Highlights)...")
+    print("\n[2/5] Verificando Destaques (Highlights)...")
     highlight_anchors = page.query_selector_all("a[href*='/stories/highlights/']")
     hl_urls = []
     for a in highlight_anchors:
@@ -277,7 +281,7 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
                             if r.status_code == 200:
                                 with open(dest_file, "wb") as f:
                                     f.write(r.content)
-                                print(f"    [✔] Destaque {h_idx} - Foto salva: {dest_file}")
+                                print(f"    [+] Destaque {h_idx} - Foto salva: {dest_file}")
                                 destaques_coletados.append(dest_file)
 
                     # Vídeos do slide
@@ -291,7 +295,7 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
                             if r.status_code == 200:
                                 with open(dest_file, "wb") as f:
                                     f.write(r.content)
-                                print(f"    [✔] Destaque {h_idx} - Vídeo salvo: {dest_file}")
+                                print(f"    [+] Destaque {h_idx} - Vídeo salvo: {dest_file}")
                                 destaques_coletados.append(dest_file)
 
                     aux_page.keyboard.press("ArrowRight")
@@ -304,7 +308,7 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
         print("  [i] Nenhum destaque encontrado no perfil.")
 
     # 3. STATUS / STORIES ATIVOS (24h)
-    print("\n[3/4] Verificando Stories Ativos (24 horas)...")
+    print("\n[3/5] Verificando Stories Ativos (24 horas)...")
     stories_coletados = []
     aux_page = page.context.new_page()
     try:
@@ -335,7 +339,7 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
                         if r.status_code == 200:
                             with open(dest_file, "wb") as f:
                                 f.write(r.content)
-                            print(f"    [✔] Story foto salva: {dest_file}")
+                            print(f"    [+] Story foto salva: {dest_file}")
                             stories_coletados.append(dest_file)
 
                 for vid in aux_page.query_selector_all("video, video source"):
@@ -348,7 +352,7 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
                         if r.status_code == 200:
                             with open(dest_file, "wb") as f:
                                 f.write(r.content)
-                            print(f"    [✔] Story vídeo salvo: {dest_file}")
+                            print(f"    [+] Story vídeo salvo: {dest_file}")
                             stories_coletados.append(dest_file)
 
                 aux_page.keyboard.press("ArrowRight")
@@ -360,11 +364,11 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
     aux_page.close()
 
     # 4. FOTOS E PUBLICAÇÕES DO FEED
-    print(f"\n[4/4] Extraindo fotos do Feed (rolando a página {max_scrolls} vezes)...")
+    print(f"\n[4/5] Extraindo fotos do Feed (rolando a página {max_scrolls} vezes)...")
     midias_coletadas = []
     seen_urls = set()
 
-    for _ in range(max_scrolls):
+    for s_idx in range(1, max_scrolls + 1):
         anchors = page.query_selector_all("a")
         p_links = [a for a in anchors if a.get_attribute("href") and ("/p/" in a.get_attribute("href") or "/reel/" in a.get_attribute("href"))]
 
@@ -394,6 +398,7 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
                     "legenda": alt
                 })
 
+        print(f"  [*] Rolagem do feed {s_idx}/{max_scrolls} concluída ({len(midias_coletadas)} fotos mapeadas)...")
         # Rola a página para baixo de forma suave como um usuário de desktop
         page.evaluate("window.scrollBy(0, 1000)")
         page.wait_for_timeout(1800)
@@ -512,7 +517,7 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
     registrar_coleta_db(username_alvo, pasta_destino, total_arquivos, status_final)
 
     print("\n" + "="*60)
-    print(f"[✔] EXTRAÇÃO E ANÁLISE FINALIZADA PARA @{username_alvo}!")
+    print(f"[+] EXTRAÇÃO E ANÁLISE FINALIZADA PARA @{username_alvo}!")
     print(f"  - Bio & Dados: Salvos em bio.txt e dados_perfil.json")
     print(f"  - Seguidores Coletados: {len(lista_seguidores)} (Status: {res_seguidores.get('status')})")
     print(f"  - Seguindo Coletados: {len(lista_seguindo)} (Status: {res_seguindo.get('status')})")
