@@ -6,6 +6,8 @@ __pycache__/
 # Segredos e configurações de conta (NÃO SUBIR PRO GITHUB)
 .env
 .env.local
+_backup_local/
+backup_*/
 
 
 # Downloads e mídias raspadas (evita repositório pesado)
