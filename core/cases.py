@@ -155,6 +155,24 @@ def vincular_alvo_ao_caso(username: str, caso_id=None) -> bool:
     return True
 
 
+def desvincular_alvos_excluidos(usernames_list: list):
+    """Remove alvos excluídos de todos os casos para não deixar contadores ou tags fantasmas."""
+    if not usernames_list:
+        return
+    excluir_set = {str(u).replace("@", "").strip().lower() for u in usernames_list if str(u).strip()}
+    casos = carregar_casos()
+    alterou = False
+    for c in casos:
+        atuais = [str(x).lower() for x in c.get("alvos", [])]
+        novos = [x for x in atuais if x not in excluir_set]
+        if len(novos) != len(atuais):
+            c["alvos"] = novos
+            c["atualizado_em"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            alterou = True
+    if alterou:
+        salvar_casos(casos)
+
+
 def obter_mapa_alvo_caso() -> dict:
     """Retorna dicionário {username_lower: {'caso_id': id, 'caso_nome': nome, 'caso_ref': ref}}."""
     mapa = {}
@@ -186,4 +204,64 @@ def _sincronizar_caso_nos_alvos_monitorados(usernames_lower: list, caso_id):
             salvar_alvos(alvos)
     except Exception:
         pass
+
+
+def atualizar_status_automatico_casos() -> list:
+    """
+    Sincroniza automaticamente o status de cada Caso:
+    - Se todos os alvos do caso estão CONCLUIDOS (ou extraídos em disco), marca como CONCLUIDO.
+    - Se houver alvos pendentes e o caso não foi arquivado manualmente, mantém EM_ANDAMENTO.
+    - Preserva o status ARQUIVADO se definido manualmente pelo operador.
+    """
+    try:
+        from .targets import carregar_alvos
+        casos = carregar_casos()
+        alvos_map = {a.get("username", "").lower(): a for a in carregar_alvos()}
+
+        pastas_dl = set()
+        if os.path.exists("downloads"):
+            for item in os.listdir("downloads"):
+                if os.path.isdir(os.path.join("downloads", item)):
+                    pastas_dl.add(item.replace("@", "").lower())
+
+        alterou = False
+        agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        for c in casos:
+            status_atual = c.get("status", "EM_ANDAMENTO")
+            if status_atual == "ARQUIVADO":
+                continue
+
+            lista_u = c.get("alvos", [])
+            if not lista_u:
+                continue
+
+            total = len(lista_u)
+            concluidos = 0
+            for u in lista_u:
+                u_low = str(u).lower()
+                reg = alvos_map.get(u_low, {})
+                st = reg.get("status", "")
+                tem_pasta = u_low in pastas_dl
+                if st == "CONCLUIDO" or tem_pasta:
+                    concluidos += 1
+
+            if total > 0 and concluidos >= total:
+                if status_atual != "CONCLUIDO":
+                    c["status"] = "CONCLUIDO"
+                    c["atualizado_em"] = agora
+                    alterou = True
+            elif concluidos < total:
+                if status_atual == "CONCLUIDO":
+                    c["status"] = "EM_ANDAMENTO"
+                    c["atualizado_em"] = agora
+                    alterou = True
+
+        if alterou:
+            salvar_casos(casos)
+        return casos
+    except Exception as err:
+        print(f"[-] Erro ao atualizar status automático dos casos: {err}")
+        return carregar_casos()
+
 

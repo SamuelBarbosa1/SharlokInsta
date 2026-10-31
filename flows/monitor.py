@@ -4,6 +4,7 @@ from playwright.sync_api import sync_playwright
 from core.config import obter_parametros_automacao
 from core.pool import carregar_pool_contas, obter_conta_ativa, obter_conta_por_user, conta_esta_ativa
 from core.targets import carregar_alvos, salvar_alvos
+from core.cases import atualizar_status_automatico_casos
 from scraper.browser import criar_contexto_desktop
 from scraper.profile import obter_info_perfil
 from scraper.actions import enviar_follow_com_conta, cancelar_solicitacao_pendente
@@ -71,6 +72,7 @@ def fluxo_verificar_e_baixar():
                         if "tentativas" in alvo and alvo["tentativas"]:
                             alvo["tentativas"][-1]["status"] = "ACEITO"
                         salvar_alvos(alvos)
+                        atualizar_status_automatico_casos()
 
                     # Caso B: Ainda pendente (verifica timeout de vácuo)
                     elif btn_st == "SOLICITADO":
@@ -246,6 +248,7 @@ def fluxo_verificar_e_baixar():
                             alvo["concluido_em"] = agora.strftime("%Y-%m-%d %H:%M:%S")
                             alvo["atualizado_em"] = agora.strftime("%Y-%m-%d %H:%M:%S")
                             salvar_alvos(alvos)
+                            atualizar_status_automatico_casos()
                         else:
                             print(f"[-] Não foi possível enviar solicitação via @{proxima_conta.get('user')} ({res_follow}).")
                     else:

@@ -1,97 +1,21 @@
 [
     {
-        "username": "souandxp",
+        "username": "samu_barbosa1",
         "is_private": true,
-        "status": "AGUARDANDO_APROVACAO",
-        "conta_atual": "samu_oliveira5",
-        "tentativas": [
-            {
-                "conta": "samu_oliveira5",
-                "solicitado_em": "2026-10-28 21:22:56",
-                "status": "VACUO_RODADA_ANTERIOR",
-                "cancelado_em": "2026-10-28 22:24:58"
-            },
-            {
-                "conta": "samu_oliveira5",
-                "solicitado_em": "2026-10-28 22:24:58",
-                "status": "VACUO_RODADA_ANTERIOR",
-                "cancelado_em": "2026-10-28 23:25:35"
-            },
-            {
-                "conta": "samu_oliveira5",
-                "solicitado_em": "2026-10-28 23:25:35",
-                "status": "VACUO_RODADA_ANTERIOR",
-                "cancelado_em": "2026-10-29 22:02:27"
-            },
-            {
-                "conta": "samu_oliveira5",
-                "solicitado_em": "2026-10-29 22:02:27",
-                "status": "SOLICITADO"
-            }
-        ],
-        "cooldown_ate": null,
-        "solicitado_em": "2026-10-29 22:02:27",
-        "atualizado_em": "2026-10-29 22:02:27"
-    },
-    {
-        "username": "gabriel_cesar2004",
-        "is_private": true,
-        "status": "ESGOTADO",
-        "conta_atual": "samu_oliveira5",
-        "tentativas": [
-            {
-                "conta": "samu_oliveira5",
-                "solicitado_em": "2026-10-28 21:23:11",
-                "status": "VACUO_RODADA_ANTERIOR",
-                "cancelado_em": "2026-10-28 22:24:58"
-            },
-            {
-                "conta": "samu_oliveira5",
-                "solicitado_em": "2026-10-28 22:24:58",
-                "status": "REJEITADO",
-                "rejeitado_em": "2026-10-28 23:25:35"
-            }
-        ],
-        "cooldown_ate": "2026-10-28 23:28:35",
-        "solicitado_em": "2026-10-28 22:24:58",
-        "atualizado_em": "2026-10-29 22:02:27"
-    },
-    {
-        "username": "hwanzx_",
-        "is_private": false,
-        "status": "CONCLUIDO",
-        "conta_atual": "samu_oliveira5",
-        "tentativas": [
-            {
-                "conta": "samu_oliveira5",
-                "solicitado_em": "2026-10-28 21:23:26",
-                "status": "ACEITO"
-            }
-        ],
-        "cooldown_ate": null,
-        "solicitado_em": "2026-10-28 21:23:26",
-        "atualizado_em": "2026-10-28 21:23:36",
-        "qtd_fotos_baixadas": 3,
-        "concluido_em": "2026-10-28 21:23:36",
-        "caso_id": null
-    },
-    {
-        "username": "antonio_gallo77",
-        "is_private": false,
         "status": "CONCLUIDO",
         "conta_atual": "samu_oliveira5",
         "caso_id": 1,
         "tentativas": [
             {
                 "conta": "samu_oliveira5",
-                "solicitado_em": "2026-10-29 23:48:07",
+                "solicitado_em": "2026-10-30 23:45:53",
                 "status": "ACEITO"
             }
         ],
         "cooldown_ate": null,
-        "solicitado_em": "2026-10-29 23:48:07",
-        "atualizado_em": "2026-10-29 23:49:27",
-        "qtd_fotos_baixadas": 25,
-        "concluido_em": "2026-10-29 23:49:27"
+        "solicitado_em": "2026-10-30 23:45:53",
+        "atualizado_em": "2026-10-30 23:46:10",
+        "qtd_fotos_baixadas": 2,
+        "concluido_em": "2026-10-30 23:46:10"
     }
 ]

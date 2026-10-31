@@ -92,8 +92,15 @@ function setupEventListeners() {
   });
   document.getElementById('btn-salvar-modal-conta').addEventListener('click', salvarNovaConta);
   document.getElementById('btn-salvar-alvos').addEventListener('click', salvarNovosAlvos);
-  document.getElementById('btn-refresh-alvos').addEventListener('click', loadAlvos);
-  document.getElementById('btn-refresh-downloads').addEventListener('click', loadDownloads);
+  const btnRefreshCasos = document.getElementById('btn-refresh-casos');
+  if (btnRefreshCasos) {
+    btnRefreshCasos.addEventListener('click', (e) => {
+      e.preventDefault();
+      atualizarCasosComFeedback(e.currentTarget);
+    });
+  }
+  document.getElementById('btn-refresh-alvos').addEventListener('click', (e) => atualizarAlvosComFeedback(e.currentTarget));
+  document.getElementById('btn-refresh-downloads').addEventListener('click', (e) => atualizarDownloadsComFeedback(e.currentTarget));
   document.getElementById('btn-clear-logs').addEventListener('click', limparLogs);
   document.getElementById('btn-toggle-sentinela').addEventListener('click', toggleSentinela);
   document.getElementById('btn-confirm-sentinela').addEventListener('click', confirmarInicioSentinela);
@@ -190,6 +197,20 @@ async function refreshStats() {
         } else {
           pillTask.innerHTML = `<i data-lucide="check-circle-2"></i><span>Motor: Ocioso / Pronto</span>`;
           pillTask.classList.remove('running');
+        }
+      }
+
+      // Indicador do Motor Go Turbo
+      const pillGo = document.getElementById('pill-go-status');
+      if (pillGo) {
+        if (data.go_engine_disponivel) {
+          pillGo.innerHTML = `<i data-lucide="zap"></i><span>Go Turbo REST: Pronto</span>`;
+          pillGo.style.borderColor = 'rgba(88,166,255,0.45)';
+          pillGo.style.color = 'var(--accent-blue)';
+        } else {
+          pillGo.innerHTML = `<i data-lucide="alert-circle"></i><span>Go: Recompilar</span>`;
+          pillGo.style.borderColor = 'var(--border-color)';
+          pillGo.style.color = 'var(--text-muted)';
         }
       }
 
@@ -498,6 +519,98 @@ async function loadCasos() {
   }
 }
 
+async function atualizarCasosComFeedback(btnEl) {
+  const btn = (btnEl && btnEl.closest) ? (btnEl.closest('button') || btnEl) : (btnEl || document.getElementById('btn-refresh-casos'));
+  const origHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i data-lucide="loader-2" class="animate-spin"></i><span>Atualizando...</span>';
+    renderIcons();
+  }
+  try {
+    await Promise.all([loadCasos(), loadAlvos(), refreshStats(), refreshLogs()]);
+    if (activeDossieCasoId) {
+      await abrirDossieCaso(activeDossieCasoId, true);
+    }
+    if (btn) {
+      btn.innerHTML = '<i data-lucide="check" class="text-gh-green"></i><span class="text-gh-green">Atualizado!</span>';
+      renderIcons();
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.innerHTML = origHtml || '<i data-lucide="refresh-cw"></i><span>Atualizar</span>';
+        renderIcons();
+      }, 1000);
+    }
+  } catch (err) {
+    console.error('Erro na atualização:', err);
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+      renderIcons();
+    }
+  }
+}
+
+async function atualizarAlvosComFeedback(btnEl) {
+  const btn = (btnEl && btnEl.closest) ? (btnEl.closest('button') || btnEl) : (btnEl || document.getElementById('btn-refresh-alvos'));
+  const origHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i data-lucide="loader-2" class="animate-spin"></i><span>Atualizando...</span>';
+    renderIcons();
+  }
+  try {
+    await Promise.all([loadAlvos(), refreshStats(), refreshLogs()]);
+    if (btn) {
+      btn.innerHTML = '<i data-lucide="check" class="text-gh-green"></i><span class="text-gh-green">Atualizado!</span>';
+      renderIcons();
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.innerHTML = origHtml || '<i data-lucide="refresh-cw"></i><span>Atualizar Lista</span>';
+        renderIcons();
+      }, 1000);
+    }
+  } catch (err) {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+      renderIcons();
+    }
+  }
+}
+
+async function atualizarDownloadsComFeedback(btnEl) {
+  const btn = (btnEl && btnEl.closest) ? (btnEl.closest('button') || btnEl) : (btnEl || document.getElementById('btn-refresh-downloads'));
+  const origHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i data-lucide="loader-2" class="animate-spin"></i><span>Atualizando...</span>';
+    renderIcons();
+  }
+  try {
+    await Promise.all([loadDownloads(), refreshStats(), refreshLogs()]);
+    if (btn) {
+      btn.innerHTML = '<i data-lucide="check" class="text-gh-green"></i><span class="text-gh-green">Atualizado!</span>';
+      renderIcons();
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.innerHTML = origHtml || '<i data-lucide="refresh-cw"></i><span>Atualizar Mídias</span>';
+        renderIcons();
+      }, 1000);
+    }
+  } catch (err) {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+      renderIcons();
+    }
+  }
+}
+
+window.atualizarCasosComFeedback = atualizarCasosComFeedback;
+window.atualizarAlvosComFeedback = atualizarAlvosComFeedback;
+window.atualizarDownloadsComFeedback = atualizarDownloadsComFeedback;
+
 function popularSeletoresCasos() {
   const opcoesForm = ['<option value="">Sem caso específico (Geral)</option>']
     .concat(cachedCasos.map(c => `<option value="${c.id}">${escapeHtml(c.nome)}${c.referencia ? ' (' + escapeHtml(c.referencia) + ')' : ''}</option>`))
@@ -584,8 +697,9 @@ function renderizarGridCasos() {
   grid.innerHTML = filtrados.map(c => {
     const r = c.resumo || { total_alvos: 0, concluidos: 0, pendentes: 0 };
     const st = c.status || 'EM_ANDAMENTO';
-    const badgeCls = st === 'EM_ANDAMENTO' ? 'badge-blue' : (st === 'CONCLUIDO' ? 'badge-green' : 'badge-gray');
-    const stLabel = st === 'EM_ANDAMENTO' ? 'EM ANDAMENTO' : st;
+    const isConcluido = st === 'CONCLUIDO';
+    const badgeCls = isConcluido ? 'badge-green' : (st === 'EM_ANDAMENTO' ? 'badge-yellow' : 'badge-gray');
+    const stLabel = isConcluido ? 'CONCLUÍDO' : (st === 'EM_ANDAMENTO' ? 'EM ANDAMENTO' : st);
     const alvosPills = (c.alvos || []).slice(0, 6).map(u => `<span class="attempt-tag">@${escapeHtml(u)}</span>`).join('');
     const extraCount = (c.alvos || []).length > 6 ? `<span class="attempt-tag">+${c.alvos.length - 6}</span>` : '';
 
@@ -600,7 +714,10 @@ function renderizarGridCasos() {
               </div>
               ${c.referencia ? `<div class="text-[11px] text-gh-muted mt-0.5 flex items-center gap-1"><i data-lucide="bookmark" style="width:11px;height:11px;"></i><span>${escapeHtml(c.referencia)}</span></div>` : ''}
             </div>
-            <span class="badge ${st === 'EM_ANDAMENTO' ? 'badge-yellow' : badgeCls}">${escapeHtml(stLabel)}</span>
+            <button type="button" class="badge ${badgeCls} inline-flex items-center gap-1 cursor-pointer hover:opacity-80 transition bg-transparent border-0" onclick="alternarStatusCaso(${c.id}, '${st}')" title="Clique para alternar status (Em Andamento / Concluído)">
+              <i data-lucide="${isConcluido ? 'check-circle-2' : 'clock'}" style="width:11px;height:11px;"></i>
+              <span>${escapeHtml(stLabel)}</span>
+            </button>
           </div>
 
           <p class="text-xs text-gh-muted line-clamp-2 min-h-[32px]">${escapeHtml(c.descricao || 'Sem observações registradas.')}</p>
@@ -649,6 +766,25 @@ function renderizarGridCasos() {
   }).join('');
   renderIcons();
 }
+
+async function alternarStatusCaso(casoId, statusAtual) {
+  try {
+    const res = await fetch(`/api/casos/${casoId}/toggle_status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    if (data.sucesso) {
+      await Promise.all([loadCasos(), refreshStats()]);
+      if (activeDossieCasoId && Number(activeDossieCasoId) === Number(casoId)) {
+        await abrirDossieCaso(casoId, true);
+      }
+    }
+  } catch (err) {
+    console.error('Erro ao alternar status do caso:', err);
+  }
+}
+window.alternarStatusCaso = alternarStatusCaso;
 
 function abrirModalNovoCaso() {
   loadContas();
@@ -1161,13 +1297,15 @@ async function confirmarScrapeDireto() {
   const maxScrolls = parseInt(document.getElementById('input-scrape-scrolls').value, 10) || 6;
   const casoEl = document.getElementById('select-caso-scrape');
   const casoId = casoEl ? casoEl.value : '';
+  const engineEl = document.getElementById('select-scrape-engine');
+  const engine = engineEl ? engineEl.value : 'go';
 
   fecharModal('modal-scrape');
-  baixarDireto(target, contaUser, maxScrolls, casoId);
+  baixarDireto(target, contaUser, maxScrolls, casoId, engine);
   input.value = '';
 }
 
-async function baixarDireto(username, contaUser = '', maxScrolls = 6, casoId = null) {
+async function baixarDireto(username, contaUser = '', maxScrolls = 6, casoId = null, engine = 'go') {
   const res = await fetch('/api/acoes/baixar_direto', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1175,7 +1313,8 @@ async function baixarDireto(username, contaUser = '', maxScrolls = 6, casoId = n
       username: username,
       conta_user: contaUser,
       max_scrolls: maxScrolls,
-      caso_id: casoId || null
+      caso_id: casoId || null,
+      engine: engine
     })
   });
   const data = await res.json();
@@ -1585,13 +1724,14 @@ function alternarSecaoManual(secao, btnEl) {
     btnEl.parentElement.querySelectorAll('.filter-chip').forEach(b => b.classList.remove('active'));
     btnEl.classList.add('active');
   }
-  const ids = ['trilha', 'status', 'faq'];
+  const ids = ['trilha', 'casos', 'golang', 'status', 'faq'];
   ids.forEach(id => {
     const el = document.getElementById(`manual-sec-${id}`);
     if (el) {
       el.style.display = id === secao ? 'block' : 'none';
     }
   });
+  renderIcons();
 }
 
 function toggleFaqItem(btnEl) {

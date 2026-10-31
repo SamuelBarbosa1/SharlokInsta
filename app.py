@@ -35,7 +35,9 @@ from core.cases import (
     remover_caso,
     vincular_alvo_ao_caso,
     obter_mapa_alvo_caso,
-    obter_caso_por_id
+    obter_caso_por_id,
+    desvincular_alvos_excluidos,
+    atualizar_status_automatico_casos
 )
 from core.config import (
     CONTAS_POOL_FILE,
@@ -49,6 +51,7 @@ from core.config import (
 from scraper.browser import criar_contexto_desktop
 from scraper.profile import obter_info_perfil
 from scraper.extractor import extrair_e_baixar_fotos
+from scraper.go_runner import is_go_engine_disponivel, extrair_perfil_via_go
 from flows.monitor import fluxo_verificar_e_baixar
 from playwright.sync_api import sync_playwright
 
@@ -204,7 +207,8 @@ def api_stats():
         "sentinela_intervalo": sentinela_intervalo,
         "tarefa_atual": tarefa_atual,
         "db_ativo": db_existe,
-        "db_tamanho_kb": db_tamanho_kb
+        "db_tamanho_kb": db_tamanho_kb,
+        "go_engine_disponivel": is_go_engine_disponivel()
     })
 
 
@@ -498,7 +502,7 @@ def _disparar_fila_alvos_background(limpos: list, modo: str = "distribuido", con
 @app.route("/api/casos", methods=["GET", "POST"])
 def api_casos():
     if request.method == "GET":
-        casos = carregar_casos()
+        casos = atualizar_status_automatico_casos()
         alvos_mon = {a.get("username", "").lower(): a for a in carregar_alvos()}
         pastas_dl = set()
         if os.path.exists("downloads"):
@@ -591,6 +595,17 @@ def api_caso_item(caso_id):
         return jsonify({"sucesso": False, "erro": "Caso não encontrado."}), 404
     log_event(f"Caso #{caso_id} ('{atualizado['nome']}') atualizado.", "INFO")
     return jsonify({"sucesso": True, "caso": atualizado})
+
+
+@app.route("/api/casos/<int:caso_id>/toggle_status", methods=["POST"])
+def api_toggle_status_caso(caso_id):
+    caso = obter_caso_por_id(caso_id)
+    if not caso:
+        return jsonify({"sucesso": False, "erro": "Caso não encontrado."}), 404
+    novo_status = "CONCLUIDO" if caso.get("status") == "EM_ANDAMENTO" else "EM_ANDAMENTO"
+    atualizado = atualizar_caso(caso_id, {"status": novo_status})
+    log_event(f"Status do Caso #{caso_id} ('{caso.get('nome')}') alterado para {novo_status}.", "INFO")
+    return jsonify({"sucesso": True, "caso": atualizado, "novo_status": novo_status})
 
 
 @app.route("/api/casos/vincular", methods=["POST"])
@@ -710,16 +725,21 @@ def api_alvos():
 
 @app.route("/api/alvos/<username>", methods=["DELETE"])
 def api_remover_alvo(username):
+    clean_u = username.lower().replace("@", "").strip()
     alvos = carregar_alvos()
-    novos = [a for a in alvos if a.get("username", "").lower() != username.lower().replace("@", "").strip()]
+    novos = [a for a in alvos if a.get("username", "").lower() != clean_u]
     salvar_alvos(novos)
-    log_event(f"Alvo @{username} removido da lista de monitoramento.", "AVISO")
+    desvincular_alvos_excluidos([clean_u])
+    log_event(f"Alvo @{username} removido da lista de monitoramento e de eventuais casos vinculados.", "AVISO")
     return jsonify({"sucesso": True})
 
 
 @app.route("/api/alvos/limpar_todos", methods=["POST"])
 def api_limpar_todos_alvos():
+    alvos = carregar_alvos()
+    todos_u = [a.get("username", "") for a in alvos]
     salvar_alvos([])
+    desvincular_alvos_excluidos(todos_u)
     log_event("Todos os alvos monitorados foram excluídos com sucesso.", "AVISO")
     return jsonify({"sucesso": True})
 
@@ -731,7 +751,8 @@ def api_remover_alvos_selecionados():
     alvos = carregar_alvos()
     novos = [a for a in alvos if a.get("username", "").lower() not in selecionados]
     salvar_alvos(novos)
-    log_event(f"{len(selecionados)} alvo(s) selecionado(s) removido(s) do monitoramento.", "AVISO")
+    desvincular_alvos_excluidos(selecionados)
+    log_event(f"{len(selecionados)} alvo(s) selecionado(s) removido(s) do monitoramento e de seus casos.", "AVISO")
     return jsonify({"sucesso": True, "total_removidos": len(selecionados)})
 
 
@@ -743,6 +764,7 @@ def api_baixar_direto():
     conta_user = data.get("conta_user", "").strip()
     max_scrolls = int(data.get("max_scrolls", 6) or 6)
     caso_id = data.get("caso_id")
+    engine = data.get("engine", "go" if is_go_engine_disponivel() else "playwright")
 
     if not target:
         return jsonify({"sucesso": False, "erro": "Username obrigatório"}), 400
@@ -767,38 +789,74 @@ def api_baixar_direto():
 
     def _job():
         bot_nome = conta_escolhida.get("user", "bot")
-        set_tarefa_atual(f"Extraindo @{target} via @{bot_nome}...")
-        log_event(f"Iniciando extração completa de @{target} usando a conta @{bot_nome} ({max_scrolls} rolagens)...", "INFO")
-        try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                ctx = criar_contexto_desktop(browser, conta_escolhida)
-                page = ctx.new_page()
-                info = obter_info_perfil(page, target)
-                if info["is_private"] and info["button_status"] != "SEGUINDO":
-                    log_event(f"[!] Alvo @{target} é privado e @{bot_nome} ainda não foi aceito (Status: {info['button_status']}).", "AVISO")
+        session = conta_escolhida.get("sessionid", "")
+        ds_uid = conta_escolhida.get("ds_user_id", "")
+
+        if engine == "go" and is_go_engine_disponivel():
+            set_tarefa_atual(f"Go Turbo: Extraindo @{target}...")
+            log_event(f"Iniciando extração em ALTA VELOCIDADE (Golang REST) para @{target} via @{bot_nome}...", "INFO")
+            try:
+                qtd = extrair_perfil_via_go(
+                    username=target,
+                    sessionid=session,
+                    ds_user_id=ds_uid,
+                    max_feed=max_scrolls * 20,
+                    max_followers=0,
+                    max_following=0,
+                    workers=12
+                )
+                if qtd > 0:
+                    log_event(f"[✔] Extração Golang concluída para @{target} ({qtd} arquivos de mídia e listas completas salvas)!", "SUCESSO")
                 else:
-                    qtd = extrair_e_baixar_fotos(page, target, max_scrolls=max_scrolls)
-                    # Atualiza status na lista de alvos se ele estiver lá
-                    alvos_atuais = carregar_alvos()
-                    alterado = False
-                    for a in alvos_atuais:
-                        if a.get("username", "").lower() == target.lower():
-                            a["status"] = "CONCLUIDO"
-                            a["qtd_fotos_baixadas"] = qtd
-                            a["concluido_em"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            a["atualizado_em"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            alterado = True
-                    if alterado:
-                        salvar_alvos(alvos_atuais)
-                browser.close()
-        except Exception as err:
-            log_event(f"[-] Erro ao baixar perfil @{target}: {err}", "ERRO")
-        finally:
-            set_tarefa_atual(None)
+                    log_event(f"[!] Engine Go não obteve mídias de @{target}. Acionando fallback automático via Playwright (Navegador)...", "AVISO")
+                    _executar_playwright_fallback(target, conta_escolhida, max_scrolls)
+            except Exception as e_go:
+                log_event(f"[!] Motor Go encontrou restrição REST ({e_go}). Acionando fallback automático via Playwright (Navegador)...", "AVISO")
+                _executar_playwright_fallback(target, conta_escolhida, max_scrolls)
+            finally:
+                atualizar_status_automatico_casos()
+                set_tarefa_atual(None)
+        else:
+            set_tarefa_atual(f"Extraindo @{target} via @{bot_nome}...")
+            log_event(f"Iniciando extração completa de @{target} usando a conta @{bot_nome} ({max_scrolls} rolagens)...", "INFO")
+            try:
+                _executar_playwright_fallback(target, conta_escolhida, max_scrolls)
+            finally:
+                atualizar_status_automatico_casos()
+                set_tarefa_atual(None)
 
     threading.Thread(target=_job, daemon=True).start()
-    return jsonify({"sucesso": True, "mensagem": f"Extração de @{target} iniciada em segundo plano (acompanhe os passos nos Logs)!"})
+    engine_nome = "Golang Turbo REST" if (engine == "go" and is_go_engine_disponivel()) else "Playwright Navegador"
+    return jsonify({"sucesso": True, "mensagem": f"Extração de @{target} iniciada em segundo plano via motor {engine_nome}!"})
+
+
+def _executar_playwright_fallback(target, conta_escolhida, max_scrolls):
+    bot_nome = conta_escolhida.get("user", "bot")
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            ctx = criar_contexto_desktop(browser, conta_escolhida)
+            page = ctx.new_page()
+            info = obter_info_perfil(page, target)
+            if info["is_private"] and info["button_status"] != "SEGUINDO":
+                log_event(f"[!] Alvo @{target} é privado e @{bot_nome} ainda não foi aceito (Status: {info['button_status']}).", "AVISO")
+            else:
+                qtd = extrair_e_baixar_fotos(page, target, max_scrolls=max_scrolls)
+                alvos_atuais = carregar_alvos()
+                alterado = False
+                for a in alvos_atuais:
+                    if a.get("username", "").lower() == target.lower():
+                        a["status"] = "CONCLUIDO"
+                        a["qtd_fotos_baixadas"] = qtd
+                        a["concluido_em"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        a["atualizado_em"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        alterado = True
+                if alterado:
+                    salvar_alvos(alvos_atuais)
+                    atualizar_status_automatico_casos()
+            browser.close()
+    except Exception as err:
+        log_event(f"[-] Erro ao baixar perfil @{target}: {err}", "ERRO")
 
 
 @app.route("/api/acoes/verificar_cascata", methods=["POST"])

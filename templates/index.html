@@ -33,7 +33,7 @@
     };
   </script>
   <script src="https://unpkg.com/lucide@latest"></script>
-  <link rel="stylesheet" href="/static/style.css?v=7">
+  <link rel="stylesheet" href="/static/style.css?v=12">
 </head>
 <body>
   <div class="layout">
@@ -121,6 +121,10 @@
             <span class="status-pill" id="pill-task-status">
               <i data-lucide="check-circle-2"></i>
               <span>Motor: Ocioso / Pronto</span>
+            </span>
+            <span class="status-pill" id="pill-go-status" style="border-color:rgba(88,166,255,0.35); color:var(--accent-blue);">
+              <i data-lucide="zap"></i>
+              <span>Go Turbo REST: Pronto</span>
             </span>
           </div>
         </div>
@@ -240,7 +244,7 @@
               <p class="subtitle">Organize cada investigação em seu próprio perfil para nunca perder o vínculo entre casos, alvos investigados e mídias coletadas.</p>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
-              <button class="btn-secondary" onclick="loadCasos()">
+              <button class="btn-secondary" id="btn-refresh-casos" onclick="atualizarCasosComFeedback(this)">
                 <i data-lucide="refresh-cw"></i>
                 <span>Atualizar</span>
               </button>
@@ -573,13 +577,21 @@
                 <i data-lucide="compass"></i>
                 <span>Trilha Passo a Passo</span>
               </button>
+              <button class="filter-chip" onclick="alternarSecaoManual('casos', this)">
+                <i data-lucide="briefcase"></i>
+                <span>Casos & Dossiês OSINT</span>
+              </button>
+              <button class="filter-chip" onclick="alternarSecaoManual('golang', this)">
+                <i data-lucide="zap"></i>
+                <span>Motor Go Turbo (REST)</span>
+              </button>
               <button class="filter-chip" onclick="alternarSecaoManual('status', this)">
                 <i data-lucide="shield-check"></i>
                 <span>Status & Anti-Bloqueio</span>
               </button>
               <button class="filter-chip" onclick="alternarSecaoManual('faq', this)">
                 <i data-lucide="help-circle"></i>
-                <span>Dúvidas & Soluções (FAQ)</span>
+                <span>Diagnóstico & FAQ</span>
               </button>
             </div>
           </div>
@@ -735,7 +747,164 @@
             </div>
           </div>
 
-          <!-- SUB-ABA 2: DICIONÁRIO DE STATUS & PROTOCOLO ANTI-BLOQUEIO -->
+          <!-- SUB-ABA 2: GUIA DE CASOS & DOSSIÊS OSINT -->
+          <div id="manual-sec-casos" style="display:none;" class="space-y-4">
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <!-- Card 1: Criando e Estruturando Casos -->
+              <div class="bg-gh-bg border border-gh-border rounded-lg p-5 flex flex-col justify-between gap-4 hover:border-gh-blue/40 transition">
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between">
+                    <span class="inline-flex items-center gap-1.5 text-[11px] font-mono font-semibold text-gh-blue bg-gh-blue/10 border border-gh-blue/30 px-2.5 py-0.5 rounded">
+                      <i data-lucide="folder-plus" style="width:12px;height:12px;"></i>
+                      ESTRUTURAÇÃO • CASOS & PASTAS
+                    </span>
+                    <span class="text-[11px] text-gh-muted font-mono">1 Caso = N Alvos</span>
+                  </div>
+                  <h4 class="text-sm font-semibold text-gh-title">Como estruturar um Caso de Investigação</h4>
+                  <p class="text-xs text-gh-muted leading-relaxed">
+                    Casos permitem agrupar múltiplos perfis suspeitos sob uma mesma pasta mestra de evidências com histórico pericial e relatório unificado.
+                  </p>
+                  <ul class="space-y-2 text-xs text-gh-text">
+                    <li class="flex items-start gap-2">
+                      <i data-lucide="check" class="text-gh-blue shrink-0 mt-0.5"></i>
+                      <span><strong>Nome & Referência:</strong> Identifique o cliente ou número de inquérito (ex: <code>Operação Falso Boleto</code>, Referência: <code>#2026/04-SP</code>).</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                      <i data-lucide="link-2" class="text-gh-blue shrink-0 mt-0.5"></i>
+                      <span><strong>Vínculo Direto de Alvos:</strong> Ao criar o caso, insira os <code>@nomes_dos_suspeitos</code>. Eles passam a carregar a tag do caso em todas as tabelas.</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                      <i data-lucide="arrow-right-left" class="text-gh-blue shrink-0 mt-0.5"></i>
+                      <span><strong>Reatribuição Dinâmica:</strong> Na tabela <em>Alvos & Monitoramento</em>, use o seletor rápido para trocar o Caso de qualquer investigado a qualquer momento.</span>
+                    </li>
+                  </ul>
+                </div>
+                <div class="pt-2 border-t border-gh-border flex justify-end">
+                  <button class="btn-secondary-sm" onclick="switchTab('tab-casos')">
+                    <span>Ir para Casos & Perfis</span>
+                    <i data-lucide="arrow-up-right"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Card 2: Dossiê Consolidado e Exportação ZIP -->
+              <div class="bg-gh-bg border border-gh-border rounded-lg p-5 flex flex-col justify-between gap-4 hover:border-gh-blue/40 transition">
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between">
+                    <span class="inline-flex items-center gap-1.5 text-[11px] font-mono font-semibold text-gh-green bg-gh-green/10 border border-gh-green/30 px-2.5 py-0.5 rounded">
+                      <i data-lucide="archive" style="width:12px;height:12px;"></i>
+                      DOSSIÊ PERICIAL • EXPORTAÇÃO UNIFICADA
+                    </span>
+                    <span class="text-[11px] text-gh-muted font-mono">1 Clique (.ZIP)</span>
+                  </div>
+                  <h4 class="text-sm font-semibold text-gh-title">Geração de Dossiê e Pacote .ZIP Completo</h4>
+                  <p class="text-xs text-gh-muted leading-relaxed">
+                    Em vez de baixar arquivos isolados por usuário, clique no botão <strong>ZIP</strong> do cartão do Caso para empacotar todas as mídias coletadas.
+                  </p>
+                  <ul class="space-y-2 text-xs text-gh-text">
+                    <li class="flex items-start gap-2">
+                      <i data-lucide="file-text" class="text-gh-green shrink-0 mt-0.5"></i>
+                      <span><strong>DOSSIE_DO_CASO.txt:</strong> Um cabeçalho pericial automático é gerado na raiz do ZIP listando metadados, data/hora da coleta, status e resumo de cada suspeito.</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                      <i data-lucide="folder" class="text-gh-green shrink-0 mt-0.5"></i>
+                      <span><strong>Subpastas Isoladas:</strong> O ZIP organiza subpastas <code>/@alvo1</code>, <code>/@alvo2</code> com suas respectivas bios, fotos, conexões e planilhas sem sobrescrever arquivos.</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                      <i data-lucide="eye" class="text-gh-green shrink-0 mt-0.5"></i>
+                      <span><strong>Painel Lateral do Dossiê:</strong> Clique em <em>Abrir Dossiê</em> para inspecionar métricas combinadas, status individual de cada investigado e galeria sem sair da tela.</span>
+                    </li>
+                  </ul>
+                </div>
+                <div class="pt-2 border-t border-gh-border flex justify-end">
+                  <button class="btn-secondary-sm" onclick="switchTab('tab-downloads')">
+                    <span>Ver Mídias Extraídas</span>
+                    <i data-lucide="arrow-up-right"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SUB-ABA 3: GUIA DO MOTOR GO TURBO (REST) -->
+          <div id="manual-sec-golang" style="display:none;" class="space-y-4">
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <!-- Card 1: Por que Golang Turbo REST -->
+              <div class="bg-gh-bg border border-gh-border rounded-lg p-5 flex flex-col justify-between gap-4 hover:border-gh-blue/40 transition">
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between">
+                    <span class="inline-flex items-center gap-1.5 text-[11px] font-mono font-semibold text-gh-blue bg-gh-blue/10 border border-gh-blue/30 px-2.5 py-0.5 rounded">
+                      <i data-lucide="zap" style="width:12px;height:12px;"></i>
+                      ARQUITETURA NATIVA • HTTP REST
+                    </span>
+                    <span class="text-[11px] text-gh-muted font-mono">10x mais veloz</span>
+                  </div>
+                  <h4 class="text-sm font-semibold text-gh-title">Vantagens do Motor Nativo em Golang</h4>
+                  <p class="text-xs text-gh-muted leading-relaxed">
+                    Desenvolvido especificamente para contornar limitações de emuladores Chromium (Playwright), que consomem muita RAM e perdem itens em scrolls de listas longas.
+                  </p>
+                  <ul class="space-y-2 text-xs text-gh-text">
+                    <li class="flex items-start gap-2">
+                      <i data-lucide="check-circle-2" class="text-gh-blue shrink-0 mt-0.5"></i>
+                      <span><strong>Paginação 100% Completa:</strong> Usa cursores <code>next_max_id</code> da API REST da Meta. Se o perfil possui 1.500 seguidores, ele extrai exatamente 1.500 sem pular nenhum.</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                      <i data-lucide="cpu" class="text-gh-blue shrink-0 mt-0.5"></i>
+                      <span><strong>Pool Concorrente de Goroutines:</strong> Faz o download de fotos e vídeos com 12 a 16 threads paralelas em milissegundos, com baixíssimo consumo de CPU.</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                      <i data-lucide="terminal" class="text-gh-blue shrink-0 mt-0.5"></i>
+                      <span><strong>Streaming em Tempo Real:</strong> Cada página paginada e cada mídia baixada é impressa no log do servidor e no terminal Web instantaneamente.</span>
+                    </li>
+                  </ul>
+                </div>
+                <div class="pt-2 border-t border-gh-border flex justify-end">
+                  <button class="btn-secondary-sm" onclick="abrirModal('modal-scrape')">
+                    <span>Testar Extração Direta</span>
+                    <i data-lucide="download"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Card 2: Quando usar Go vs Playwright -->
+              <div class="bg-gh-bg border border-gh-border rounded-lg p-5 flex flex-col justify-between gap-4 hover:border-gh-blue/40 transition">
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between">
+                    <span class="inline-flex items-center gap-1.5 text-[11px] font-mono font-semibold text-gh-yellow bg-gh-yellow/10 border border-gh-yellow/30 px-2.5 py-0.5 rounded">
+                      <i data-lucide="git-compare" style="width:12px;height:12px;"></i>
+                      COMPARATIVO OPERACIONAL
+                    </span>
+                    <span class="text-[11px] text-gh-muted font-mono">Qual motor escolher?</span>
+                  </div>
+                  <h4 class="text-sm font-semibold text-gh-title">Go Turbo REST versus Motor Playwright</h4>
+                  <div class="space-y-2 text-xs">
+                    <div class="bg-gh-panel border border-gh-border rounded p-3 space-y-1">
+                      <div class="flex items-center gap-1.5 font-semibold text-gh-blue">
+                        <i data-lucide="zap" style="width:14px;height:14px;"></i>
+                        <span>Escolha Golang Turbo REST quando:</span>
+                      </div>
+                      <p class="text-gh-muted">Você quer extrair perfis públicos, perfis que o fantoche já segue, listas grandes de seguidores/seguindo (centenas ou milhares de conexões) e fotos de feed no menor tempo possível sem abrir janelas de navegador.</p>
+                    </div>
+                    <div class="bg-gh-panel border border-gh-border rounded p-3 space-y-1">
+                      <div class="flex items-center gap-1.5 font-semibold text-gh-yellow">
+                        <i data-lucide="globe" style="width:14px;height:14px;"></i>
+                        <span>Escolha Playwright (Navegador) quando:</span>
+                      </div>
+                      <p class="text-gh-muted">For necessário enviar a solicitação inicial de seguir (Follow) em contas privadas, resolver desafios visuais ou capturar Stories temporários diretamente pelo fluxo de DOM com simulação humana de cliques.</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="pt-2 border-t border-gh-border flex justify-end">
+                  <button class="btn-secondary-sm" onclick="switchTab('tab-logs')">
+                    <span>Acompanhar Logs</span>
+                    <i data-lucide="activity"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SUB-ABA 4: DICIONÁRIO DE STATUS & PROTOCOLO ANTI-BLOQUEIO -->
           <div id="manual-sec-status" style="display:none;" class="space-y-6">
             <div>
               <h4 class="text-sm font-semibold text-gh-title mb-3 flex items-center gap-2">
@@ -881,6 +1050,45 @@
                 Utilize a aba <strong>Casos & Dossiês</strong>! Você cria um Perfil de Investigação com o nome do caso, referência/cliente e informações básicas, e já adiciona ali dentro quais <code>@contas</code> fazem parte daquela investigação. Depois, tanto na tabela de <em>Alvos & Monitoramento</em> quanto em <em>Mídias Extraídas</em>, você pode filtrar por Caso ou baixar um <code>Dossie_Completo.zip</code> contendo todas as pastas daquele caso.
               </div>
             </div>
+
+            <div class="bg-gh-bg border border-gh-border rounded-lg overflow-hidden">
+              <button type="button" class="w-full flex items-center justify-between p-4 text-left text-xs font-semibold text-gh-title hover:bg-gh-card/60 transition cursor-pointer bg-transparent border-0" onclick="toggleFaqItem(this)">
+                <span class="flex items-center gap-2">
+                  <i data-lucide="help-circle" class="text-gh-blue"></i>
+                  <span>6. O botão "Atualizar" parece não responder ou demora. O que acontece nos bastidores?</span>
+                </span>
+                <i data-lucide="chevron-down" class="text-gh-muted transition-transform"></i>
+              </button>
+              <div class="px-4 pb-4 text-xs text-gh-muted leading-relaxed" style="display:none;">
+                O botão <strong>Atualizar</strong> agora possui feedback visual em tempo real: ao clicar, o ícone gira exibindo <em>"Atualizando..."</em> enquanto dispara requisições paralelas para sincronizar Casos, Alvos, Mídias, Estatísticas do SQLite e Logs do sistema. Ao concluir, exibe <em>"Atualizado! ✔"</em> em verde. Se porventura sua página estava aberta com versão antiga em cache, faça <kbd class="px-1 bg-gh-card border border-gh-border rounded font-mono text-[10px]">Ctrl + F5</kbd> para forçar a recarga dos arquivos estáticos.
+              </div>
+            </div>
+
+            <div class="bg-gh-bg border border-gh-border rounded-lg overflow-hidden">
+              <button type="button" class="w-full flex items-center justify-between p-4 text-left text-xs font-semibold text-gh-title hover:bg-gh-card/60 transition cursor-pointer bg-transparent border-0" onclick="toggleFaqItem(this)">
+                <span class="flex items-center gap-2">
+                  <i data-lucide="help-circle" class="text-gh-blue"></i>
+                  <span>7. O que acontece ao extrair um perfil Privado com o motor Go Turbo?</span>
+                </span>
+                <i data-lucide="chevron-down" class="text-gh-muted transition-transform"></i>
+              </button>
+              <div class="px-4 pb-4 text-xs text-gh-muted leading-relaxed" style="display:none;">
+                A API oficial da Meta bloqueia a lista de seguidores/seguindo e fotos de perfis privados para contas que ainda não foram aceitas. O motor Go Turbo identifica essa condição imediatamente, extrai a Biografia pública e o Avatar em alta resolução, gera o arquivo <code>bio.txt</code> e grava o status <code>PRIVADO_BLOQUEADO</code> com segurança, sem quebrar o fluxo nem penalizar a conta fantoche. Para ter acesso completo, utilize a aba <em>Alvos & Monitoramento</em> com o <strong>Sentinela 24/7</strong> para solicitar o follow de forma humanizada.
+              </div>
+            </div>
+
+            <div class="bg-gh-bg border border-gh-border rounded-lg overflow-hidden">
+              <button type="button" class="w-full flex items-center justify-between p-4 text-left text-xs font-semibold text-gh-title hover:bg-gh-card/60 transition cursor-pointer bg-transparent border-0" onclick="toggleFaqItem(this)">
+                <span class="flex items-center gap-2">
+                  <i data-lucide="help-circle" class="text-gh-blue"></i>
+                  <span>8. Se eu excluir um alvo, ele ainda fica listado dentro do Caso de Investigação?</span>
+                </span>
+                <i data-lucide="chevron-down" class="text-gh-muted transition-transform"></i>
+              </button>
+              <div class="px-4 pb-4 text-xs text-gh-muted leading-relaxed" style="display:none;">
+                Não! Implementamos a rotina de limpeza de vínculos de alvos: ao excluir um alvo (individualmente, em lote ou limpando tudo), a rotina <code>desvincular_alvos_excluidos()</code> remove automaticamente a menção do alvo de todos os casos em <code>casos_investigacao.json</code> e sincroniza no SQLite. Assim, os contadores e cartões de Casos permanecem sempre 100% consistentes.
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -895,7 +1103,7 @@
             </div>
             <div>
               <div class="text-[11px] text-gh-muted">Release Atual</div>
-              <div class="text-base font-bold font-mono text-gh-title">v2.6.0</div>
+              <div class="text-base font-bold font-mono text-gh-title">v2.8.0</div>
             </div>
           </div>
           <div class="bg-gh-panel border border-gh-border rounded-lg p-3.5 flex items-center gap-3">
@@ -973,9 +1181,78 @@
 
           <!-- Timeline Vertical de Releases -->
           <div class="changelog-list relative border-l-2 border-gh-border ml-2 pl-5 space-y-5" id="changelog-list">
-            <!-- v2.6 -->
+            <!-- v2.8.0 -->
+            <div class="changelog-version-card relative">
+              <span class="absolute -left-[27px] top-5 w-3 h-3 rounded-full bg-gh-blue ring-4 ring-gh-panel"></span>
+              <div class="changelog-header">
+                <h4>
+                  <span class="version-pill">v2.8.0</span>
+                  <span>Feedback do Botão Atualizar, Auditoria Profunda de Bugs e Expansão do Treinamento</span>
+                </h4>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="attempt-tag">engine-go/</span>
+                  <span class="attempt-tag">templates/index.html</span>
+                  <span class="attempt-tag">static/app.js</span>
+                  <span class="attempt-tag">core/cases.py</span>
+                </div>
+              </div>
+              <div class="changelog-items">
+                <div class="changelog-item" data-chg="ARRUMADO">
+                  <span class="chg-tag chg-fixed"><i data-lucide="wrench"></i>ARRUMADO</span>
+                  <div><strong>Botão "Atualizar" com Feedback Visual e Evento Direto:</strong> Adicionado tratamento explícito via <code>addEventListener</code> e feedback em tempo real com spinner rotativo (<code>animate-spin</code>), recarregamento paralelo assíncrono de Casos, Alvos, Mídias e Logs, finalizando com confirmação visual <em>"Atualizado! ✔"</em>.</div>
+                </div>
+                <div class="changelog-item" data-chg="ARRUMADO">
+                  <span class="chg-tag chg-fixed"><i data-lucide="wrench"></i>ARRUMADO</span>
+                  <div><strong>Correção de Escape Duplo no Cookie SessionID (Go Turbo):</strong> O motor Go escapava com <code>url.QueryEscape</code> cookies já codificados, convertendo <code>%3A</code> em <code>%253A</code> e provocando rejeição 401. A limpeza de cookie agora desfaz duplos escapes e envia o sessionid limpo.</div>
+                </div>
+                <div class="changelog-item" data-chg="ARRUMADO">
+                  <span class="chg-tag chg-fixed"><i data-lucide="wrench"></i>ARRUMADO</span>
+                  <div><strong>Tratamento Elegante para Perfis Privados Não Seguidos (Go Engine):</strong> Se um perfil for privado e a conta fantoche não for seguidora autorizada, o Go salva a Bio e Avatar HD, registra o status <code>PRIVADO_BLOQUEADO</code> e pula chamadas restritas de paginação, sem emitir erros 400.</div>
+                </div>
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Manual de Treinamento Expandido em 5 Seções:</strong> Adicionados guias dedicados para <em>Casos & Dossiês OSINT</em>, <em>Manual Operacional da Engine Go Turbo</em> e <em>FAQ de Diagnóstico & Resolução de Problemas</em> com 8 tópicos aprofundados.</div>
+                </div>
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Prevenção de Alvos Fantasmas nos Casos:</strong> A rotina <code>desvincular_alvos_excluidos()</code> higieniza as listas de alvos dentro de cada caso de investigação sempre que um alvo é excluído na tabela principal.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- v2.7 -->
             <div class="changelog-version-card relative">
               <span class="absolute -left-[27px] top-5 w-3 h-3 rounded-full bg-gh-green ring-4 ring-gh-panel"></span>
+              <div class="changelog-header">
+                <h4>
+                  <span class="version-pill">v2.7.0</span>
+                  <span>Motor Híbrido Golang Turbo REST & Download Concorrente via Goroutines</span>
+                </h4>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="attempt-tag">engine-go/</span>
+                  <span class="attempt-tag">bin/sharlok-engine.exe</span>
+                  <span class="attempt-tag">scraper/go_runner.py</span>
+                </div>
+              </div>
+              <div class="changelog-items">
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Motor Golang REST Nativo (<code>bin/sharlok-engine.exe</code>):</strong> Extração de conexões paginando de 50 em 50 via rotas internas com ponteiro <code>next_max_id</code>, capturando 100% dos seguidores/seguindo (centenas ou milhares) em poucos segundos sem travamentos de navegador.</div>
+                </div>
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Pool Concorrente de Goroutines:</strong> Download simultâneo em paralelo (12 workers) de fotos do feed, carrosséis e avatar com stream de alta velocidade direto para o disco.</div>
+                </div>
+                <div class="changelog-item" data-chg="ALTERADO">
+                  <span class="chg-tag chg-changed"><i data-lucide="refresh-cw"></i>ALTERADO</span>
+                  <div><strong>Arquitetura Híbrida Python + Go:</strong> O Python/Flask gerencia o painel web, banco SQLite e ações comportamentais do Playwright (seguir/sentinela), enquanto o Go assume a força bruta de requisições de rede com fallback automático.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- v2.6 -->
+            <div class="changelog-version-card relative">
+              <span class="absolute -left-[27px] top-5 w-3 h-3 rounded-full bg-gh-blue ring-4 ring-gh-panel"></span>
               <div class="changelog-header">
                 <h4>
                   <span class="version-pill">v2.6.0</span>
@@ -1210,6 +1487,12 @@
           <option value="">Sem caso específico (Geral)</option>
         </select>
 
+        <label class="label mt-2">Motor de Extração:</label>
+        <select id="select-scrape-engine" class="input-select">
+          <option value="go">⚡ Golang Turbo REST (Puxa 100% dos seguidores/seguindo + downloads concorrentes)</option>
+          <option value="playwright">🌐 Playwright Navegador (Simulação visual clássica no DOM)</option>
+        </select>
+
         <label class="label mt-2">Conta Fantoche para Extração:</label>
         <select id="select-conta-scrape" class="input-select">
           <option value="">Automático (Usar conta vinculada ao alvo ou 1ª ativa)</option>
@@ -1397,6 +1680,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=7"></script>
+  <script src="/static/app.js?v=12"></script>
 </body>
 </html>
