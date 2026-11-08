@@ -1,7 +1,32 @@
 import os
+import re
 import json
 import requests
 from core.database import inicializar_banco, registrar_coleta_db
+
+
+def _anexar_captura_videos_rede(aux_page, fila_videos):
+    """Intercepta respostas de rede do player do Instagram para capturar URLs reais (.mp4) de vídeos blob:."""
+    def _on_response(resp):
+        try:
+            u = resp.url or ""
+            ct = (resp.headers.get("content-type") or "").lower()
+            if (".mp4" in u or "video/mp4" in ct) and u.startswith(("http://", "https://")):
+                clean_u = re.sub(r"[&?]byte(?:start|end)=\d+", "", u)
+                if clean_u not in fila_videos:
+                    fila_videos.append(clean_u)
+            elif ("json" in ct or "graphql" in u or "/api/v1/" in u) and resp.status == 200:
+                txt = resp.text()
+                if "video_versions" in txt:
+                    for m in re.findall(r'"video_versions"\s*:\s*\[\s*\{[^}]*?"url"\s*:\s*"([^"]+)"', txt):
+                        v_url = m.encode("utf-8").decode("unicode_escape").replace("\\/", "/")
+                        if v_url.startswith(("http://", "https://")) and v_url not in fila_videos:
+                            fila_videos.append(v_url)
+        except Exception:
+            pass
+
+    aux_page.on("response", _on_response)
+
 
 def _fechar_modal(page, modal_el=None):
     """Fecha o modal de seguidores/seguindo com segurança."""
@@ -174,17 +199,33 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
     header_el = page.query_selector("header")
     header_text = header_el.inner_text() if header_el else ""
 
-    posts_count = "N/A"
-    seguidores = "N/A"
-    seguindo = "N/A"
-    for line in header_text.split("\n"):
-        l = line.strip().lower()
-        if "posts" in l or "publicações" in l:
-            posts_count = line.strip()
-        elif "seguidores" in l or "followers" in l:
-            seguidores = line.strip()
-        elif "seguindo" in l or "following" in l:
-            seguindo = line.strip()
+    meta_desc = ""
+    try:
+        meta_el = page.query_selector("meta[name='description'], meta[property='og:description']")
+        if meta_el:
+            meta_desc = meta_el.get_attribute("content") or ""
+    except Exception:
+        pass
+
+    texto_combinado = f"{header_text}\n{meta_desc}"
+
+    posts_count = "0 posts"
+    seguidores = "0 seguidores"
+    seguindo = "0 seguindo"
+
+    m_posts = re.search(r"([\d.,]+\s*(?:mil|mi|k|m)?)\s*\n?\s*(?:posts?|publicaç[õo]es|publica[çc][ãa]o)\b", texto_combinado, re.IGNORECASE)
+    if m_posts:
+        posts_count = f"{m_posts.group(1).strip()} posts"
+
+    m_seg = re.search(r"([\d.,]+\s*(?:mil|mi|k|m)?)\s*\n?\s*(?:seguidores|followers|seguidor)\b", texto_combinado, re.IGNORECASE)
+    if m_seg:
+        seguidores = f"{m_seg.group(1).strip()} seguidores"
+
+    m_sdo = re.search(r"([\d.,]+\s*(?:mil|mi|k|m)?)\s*\n?\s*(?:seguindo|following|a\s+seguir)\b", texto_combinado, re.IGNORECASE)
+    if not m_sdo:
+        m_sdo = re.search(r"(?:seguindo|following|a\s+seguir)\s*\n?\s*([\d.,]+\s*(?:mil|mi|k|m)?)\b", texto_combinado, re.IGNORECASE)
+    if m_sdo:
+        seguindo = f"{m_sdo.group(1).strip()} seguindo"
 
     # Links da bio (ignora links internos do Instagram)
     links = []
@@ -197,21 +238,22 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
             if full_url not in [lk["url"] for lk in links]:
                 links.append({"texto": txt, "url": full_url})
 
-    # Avatar em alta definição
-    avatar_salvo = False
+    # Avatar em alta definição (preserva avatar já baixado pelo motor Go se existir)
+    avatar_path = os.path.join(pasta_destino, "avatar_perfil.jpg")
+    avatar_salvo = os.path.exists(avatar_path) and os.path.getsize(avatar_path) > 500
     try:
         avatar_img = page.query_selector("header img")
         if avatar_img:
             avatar_src = avatar_img.get_attribute("src")
-            if avatar_src and avatar_src.startswith("http"):
+            if avatar_src and avatar_src.startswith(("http://", "https://")):
                 res = requests.get(avatar_src, timeout=15)
                 if res.status_code == 200:
-                    with open(os.path.join(pasta_destino, "avatar_perfil.jpg"), "wb") as f:
+                    with open(avatar_path, "wb") as f:
                         f.write(res.content)
                     avatar_salvo = True
                     print("  [>] Foto de perfil (avatar HD) salva com sucesso!")
     except Exception as e:
-        print(f"  [-] Erro ao salvar avatar: {e}")
+        print(f"  [-] Aviso ao atualizar avatar: {e}")
 
     # Salva arquivo bio.txt legível
     bio_txt_path = os.path.join(pasta_destino, "bio.txt")
@@ -221,7 +263,7 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
         f.write(f" {posts_count} | {seguidores} | {seguindo}\n")
         f.write("="*60 + "\n\n")
         f.write("--- BIOGRAFIA E INFORMAÇÕES ---\n")
-        f.write(header_text + "\n\n")
+        f.write((header_text or meta_desc) + "\n\n")
         if links:
             f.write("--- LINKS EXTERNOS NA BIO ---\n")
             for lk in links:
@@ -244,19 +286,21 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
         os.makedirs(pasta_destaques, exist_ok=True)
         print(f"  [+] {len(hl_urls)} pasta(s) de destaques identificada(s)!")
         aux_page = page.context.new_page()
+        fila_videos_hl = []
+        _anexar_captura_videos_rede(aux_page, fila_videos_hl)
 
         for h_idx, href in enumerate(hl_urls, 1):
             full_hl_url = f"https://www.instagram.com{href}" if href.startswith("/") else href
             print(f"  [*] Abrindo destaque {h_idx}/{len(hl_urls)}...")
             try:
-                aux_page.goto(full_hl_url, wait_until="domcontentloaded")
+                fila_videos_hl.clear()
+                aux_page.goto(full_hl_url, wait_until="domcontentloaded", timeout=20000)
                 aux_page.wait_for_timeout(2000)
 
-                # Se houver confirmação "View story", clica
                 btn = aux_page.locator("text=/View story|Ver story/i")
                 if btn.count() > 0:
                     btn.first.click()
-                    aux_page.wait_for_timeout(2500)
+                    aux_page.wait_for_timeout(2200)
 
                 seen_slide_urls = set()
                 slide_count = 0
@@ -264,44 +308,78 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
                     if "/stories/" not in aux_page.url:
                         break
 
-                    # Imagens do slide
+                    # Imagens do slide (ignora blob: e avatares minúsculos)
                     for img in aux_page.query_selector_all("img"):
-                        w = img.evaluate("el => el.naturalWidth")
-                        h = img.evaluate("el => el.naturalHeight")
-                        s = img.get_attribute("src")
-                        srcset = img.get_attribute("srcset")
-                        best = s
-                        if srcset:
-                            best = srcset.split(",")[-1].strip().split(" ")[0]
-                        if w and h and (w > 200 or h > 200) and best and best not in seen_slide_urls:
-                            seen_slide_urls.add(best)
-                            slide_count += 1
-                            dest_file = os.path.join(pasta_destaques, f"destaque_{h_idx}_slide_{slide_count}.jpg")
-                            r = requests.get(best, timeout=15)
-                            if r.status_code == 200:
-                                with open(dest_file, "wb") as f:
-                                    f.write(r.content)
-                                print(f"    [+] Destaque {h_idx} - Foto salva: {dest_file}")
-                                destaques_coletados.append(dest_file)
+                        try:
+                            w = img.evaluate("el => el.naturalWidth") or 0
+                            h = img.evaluate("el => el.naturalHeight") or 0
+                            s = img.get_attribute("src") or ""
+                            srcset = img.get_attribute("srcset") or ""
+                            best = s
+                            if srcset:
+                                best = srcset.split(",")[-1].strip().split(" ")[0]
+                            if (w > 200 or h > 200) and best.startswith(("http://", "https://")) and best not in seen_slide_urls:
+                                seen_slide_urls.add(best)
+                                slide_count += 1
+                                dest_file = os.path.join(pasta_destaques, f"destaque_{h_idx}_slide_{slide_count}.jpg")
+                                r = requests.get(best, timeout=15)
+                                if r.status_code == 200:
+                                    with open(dest_file, "wb") as f:
+                                        f.write(r.content)
+                                    print(f"    [+] Destaque {h_idx} - Foto salva: {os.path.basename(dest_file)}")
+                                    destaques_coletados.append(dest_file)
+                        except Exception:
+                            pass
 
-                    # Vídeos do slide
+                    # Vídeos do slide (suporta URLs diretas HTTP e fluxos MSE blob: capturados via rede/poster)
                     for vid in aux_page.query_selector_all("video, video source"):
-                        v_src = vid.get_attribute("src")
-                        if v_src and v_src not in seen_slide_urls:
-                            seen_slide_urls.add(v_src)
-                            slide_count += 1
-                            dest_file = os.path.join(pasta_destaques, f"destaque_{h_idx}_slide_{slide_count}.mp4")
-                            r = requests.get(v_src, timeout=20)
-                            if r.status_code == 200:
-                                with open(dest_file, "wb") as f:
-                                    f.write(r.content)
-                                print(f"    [+] Destaque {h_idx} - Vídeo salvo: {dest_file}")
-                                destaques_coletados.append(dest_file)
+                        try:
+                            v_src = (vid.get_attribute("src") or "").strip()
+                            poster = (vid.get_attribute("poster") or "").strip()
+                            if v_src.startswith(("http://", "https://")) and v_src not in seen_slide_urls:
+                                seen_slide_urls.add(v_src)
+                                slide_count += 1
+                                dest_file = os.path.join(pasta_destaques, f"destaque_{h_idx}_slide_{slide_count}.mp4")
+                                r = requests.get(v_src, timeout=20)
+                                if r.status_code == 200 and len(r.content) > 1000:
+                                    with open(dest_file, "wb") as f:
+                                        f.write(r.content)
+                                    print(f"    [+] Destaque {h_idx} - Vídeo salvo: {os.path.basename(dest_file)}")
+                                    destaques_coletados.append(dest_file)
+                            elif poster.startswith(("http://", "https://")) and poster not in seen_slide_urls:
+                                seen_slide_urls.add(poster)
+                                slide_count += 1
+                                dest_file = os.path.join(pasta_destaques, f"destaque_{h_idx}_slide_{slide_count}.jpg")
+                                r = requests.get(poster, timeout=15)
+                                if r.status_code == 200:
+                                    with open(dest_file, "wb") as f:
+                                        f.write(r.content)
+                                    print(f"    [+] Destaque {h_idx} - Capa de vídeo salva: {os.path.basename(dest_file)}")
+                                    destaques_coletados.append(dest_file)
+                        except Exception:
+                            pass
+
+                    # Baixa vídeos .mp4 interceptados pela rede durante o slide (contorna blob:https://...)
+                    while fila_videos_hl:
+                        v_net = fila_videos_hl.pop(0)
+                        if v_net.startswith(("http://", "https://")) and v_net not in seen_slide_urls:
+                            seen_slide_urls.add(v_net)
+                            try:
+                                r = requests.get(v_net, timeout=20)
+                                if r.status_code == 200 and len(r.content) > 5000:
+                                    slide_count += 1
+                                    dest_file = os.path.join(pasta_destaques, f"destaque_{h_idx}_video_{slide_count}.mp4")
+                                    with open(dest_file, "wb") as f:
+                                        f.write(r.content)
+                                    print(f"    [+] Destaque {h_idx} - Vídeo MP4 salvo: {os.path.basename(dest_file)}")
+                                    destaques_coletados.append(dest_file)
+                            except Exception:
+                                pass
 
                     aux_page.keyboard.press("ArrowRight")
                     aux_page.wait_for_timeout(1000)
             except Exception as e:
-                print(f"  [-] Erro ao processar destaque {h_idx}: {e}")
+                print(f"  [!] Aviso ao verificar destaque {h_idx}: {e}")
 
         aux_page.close()
     else:
@@ -311,8 +389,10 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
     print("\n[3/5] Verificando Stories Ativos (24 horas)...")
     stories_coletados = []
     aux_page = page.context.new_page()
+    fila_videos_st = []
+    _anexar_captura_videos_rede(aux_page, fila_videos_st)
     try:
-        aux_page.goto(f"https://www.instagram.com/stories/{username_alvo}/", wait_until="domcontentloaded")
+        aux_page.goto(f"https://www.instagram.com/stories/{username_alvo}/", wait_until="domcontentloaded", timeout=20000)
         aux_page.wait_for_timeout(2500)
         if "/stories/" in aux_page.url:
             os.makedirs(pasta_stories, exist_ok=True)
@@ -320,7 +400,7 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
             btn = aux_page.locator("text=/View story|Ver story/i")
             if btn.count() > 0:
                 btn.first.click()
-                aux_page.wait_for_timeout(2500)
+                aux_page.wait_for_timeout(2200)
 
             seen_st_urls = set()
             st_count = 0
@@ -328,39 +408,72 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
                 if "/stories/" not in aux_page.url:
                     break
                 for img in aux_page.query_selector_all("img"):
-                    w = img.evaluate("el => el.naturalWidth")
-                    h = img.evaluate("el => el.naturalHeight")
-                    s = img.get_attribute("src")
-                    if w and h and (w > 200 or h > 200) and s and s not in seen_st_urls:
-                        seen_st_urls.add(s)
-                        st_count += 1
-                        dest_file = os.path.join(pasta_stories, f"story_{st_count}.jpg")
-                        r = requests.get(s, timeout=15)
-                        if r.status_code == 200:
-                            with open(dest_file, "wb") as f:
-                                f.write(r.content)
-                            print(f"    [+] Story foto salva: {dest_file}")
-                            stories_coletados.append(dest_file)
+                    try:
+                        w = img.evaluate("el => el.naturalWidth") or 0
+                        h = img.evaluate("el => el.naturalHeight") or 0
+                        s = (img.get_attribute("src") or "").strip()
+                        if (w > 200 or h > 200) and s.startswith(("http://", "https://")) and s not in seen_st_urls:
+                            seen_st_urls.add(s)
+                            st_count += 1
+                            dest_file = os.path.join(pasta_stories, f"story_{st_count}.jpg")
+                            r = requests.get(s, timeout=15)
+                            if r.status_code == 200:
+                                with open(dest_file, "wb") as f:
+                                    f.write(r.content)
+                                print(f"    [+] Story foto salva: {os.path.basename(dest_file)}")
+                                stories_coletados.append(dest_file)
+                    except Exception:
+                        pass
 
                 for vid in aux_page.query_selector_all("video, video source"):
-                    v_src = vid.get_attribute("src")
-                    if v_src and v_src not in seen_st_urls:
-                        seen_st_urls.add(v_src)
-                        st_count += 1
-                        dest_file = os.path.join(pasta_stories, f"story_{st_count}.mp4")
-                        r = requests.get(v_src, timeout=20)
-                        if r.status_code == 200:
-                            with open(dest_file, "wb") as f:
-                                f.write(r.content)
-                            print(f"    [+] Story vídeo salvo: {dest_file}")
-                            stories_coletados.append(dest_file)
+                    try:
+                        v_src = (vid.get_attribute("src") or "").strip()
+                        poster = (vid.get_attribute("poster") or "").strip()
+                        if v_src.startswith(("http://", "https://")) and v_src not in seen_st_urls:
+                            seen_st_urls.add(v_src)
+                            st_count += 1
+                            dest_file = os.path.join(pasta_stories, f"story_{st_count}.mp4")
+                            r = requests.get(v_src, timeout=20)
+                            if r.status_code == 200 and len(r.content) > 1000:
+                                with open(dest_file, "wb") as f:
+                                    f.write(r.content)
+                                print(f"    [+] Story vídeo salvo: {os.path.basename(dest_file)}")
+                                stories_coletados.append(dest_file)
+                        elif poster.startswith(("http://", "https://")) and poster not in seen_st_urls:
+                            seen_st_urls.add(poster)
+                            st_count += 1
+                            dest_file = os.path.join(pasta_stories, f"story_{st_count}.jpg")
+                            r = requests.get(poster, timeout=15)
+                            if r.status_code == 200:
+                                with open(dest_file, "wb") as f:
+                                    f.write(r.content)
+                                print(f"    [+] Story capa salva: {os.path.basename(dest_file)}")
+                                stories_coletados.append(dest_file)
+                    except Exception:
+                        pass
+
+                while fila_videos_st:
+                    v_net = fila_videos_st.pop(0)
+                    if v_net.startswith(("http://", "https://")) and v_net not in seen_st_urls:
+                        seen_st_urls.add(v_net)
+                        try:
+                            r = requests.get(v_net, timeout=20)
+                            if r.status_code == 200 and len(r.content) > 5000:
+                                st_count += 1
+                                dest_file = os.path.join(pasta_stories, f"story_video_{st_count}.mp4")
+                                with open(dest_file, "wb") as f:
+                                    f.write(r.content)
+                                print(f"    [+] Story vídeo MP4 salvo: {os.path.basename(dest_file)}")
+                                stories_coletados.append(dest_file)
+                        except Exception:
+                            pass
 
                 aux_page.keyboard.press("ArrowRight")
                 aux_page.wait_for_timeout(1000)
         else:
             print("  [i] Perfil não possui Stories de 24h ativos no momento.")
     except Exception as e:
-        print(f"  [-] Checagem de stories: {e}")
+        print(f"  [!] Aviso ao verificar stories: {e}")
     aux_page.close()
 
     # 4. FOTOS E PUBLICAÇÕES DO FEED
@@ -421,20 +534,50 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
     else:
         print(f"  [-] Nenhuma foto localizada na grade do feed.")
 
+    if posts_count == "0 posts" and len(feed_baixados) > 0:
+        posts_count = f"{len(feed_baixados)} posts"
+
     # 5. EXTRAÇÃO DE SEGUIDORES, SEGUINDO E CONEXÕES MÚTUAS
     print("\n[5/5] Analisando Conexões: Quem segue o alvo e quem o alvo segue de volta...")
-    try:
-        page.evaluate("window.scrollTo(0, 0)")
-        page.wait_for_timeout(1200)
-    except Exception:
-        pass
 
-    res_seguidores = extrair_lista_usuarios_modal(page, username_alvo, tipo="followers", max_scrolls=12)
-    page.wait_for_timeout(1500)
-    res_seguindo = extrair_lista_usuarios_modal(page, username_alvo, tipo="following", max_scrolls=12)
+    # Verifica se o Motor Go Turbo REST já populou listas completas nesta pasta
+    json_path = os.path.join(pasta_destino, "dados_perfil.json")
+    go_seguidores_prev = []
+    go_seguindo_prev = []
+    engine_usada = "PLAYWRIGHT_BROWSER"
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, "r", encoding="utf-8") as fg:
+                prev_data = json.load(fg)
+                if prev_data.get("engine_utilizada") in ("GOLANG_TURBO_REST", "HYBRID_GO_PLAYWRIGHT"):
+                    go_seguidores_prev = prev_data.get("conexoes", {}).get("seguidores", {}).get("contas", []) or []
+                    go_seguindo_prev = prev_data.get("conexoes", {}).get("seguindo", {}).get("contas", []) or []
+        except Exception:
+            pass
+
+    if go_seguidores_prev or go_seguindo_prev:
+        print(f"  [+] Preservando listas completas do Motor Go Turbo REST ({len(go_seguidores_prev)} seguidores | {len(go_seguindo_prev)} seguindo)!")
+        res_seguidores = {"status": "SUCESSO", "motivo": "Extraído via Go Turbo REST", "usuarios": go_seguidores_prev}
+        res_seguindo = {"status": "SUCESSO", "motivo": "Extraído via Go Turbo REST", "usuarios": go_seguindo_prev}
+        engine_usada = "HYBRID_GO_PLAYWRIGHT"
+    else:
+        try:
+            page.evaluate("window.scrollTo(0, 0)")
+            page.wait_for_timeout(1200)
+        except Exception:
+            pass
+
+        res_seguidores = extrair_lista_usuarios_modal(page, username_alvo, tipo="followers", max_scrolls=12)
+        page.wait_for_timeout(1500)
+        res_seguindo = extrair_lista_usuarios_modal(page, username_alvo, tipo="following", max_scrolls=12)
 
     lista_seguidores = res_seguidores.get("usuarios", [])
     lista_seguindo = res_seguindo.get("usuarios", [])
+
+    if seguidores == "0 seguidores" and len(lista_seguidores) > 0:
+        seguidores = f"{len(lista_seguidores)} seguidores"
+    if seguindo == "0 seguindo" and len(lista_seguindo) > 0:
+        seguindo = f"{len(lista_seguindo)} seguindo"
 
     # Análise de relacionamentos (mútuos e quem não segue de volta)
     seguem_de_volta = sorted(list(set(lista_seguidores) & set(lista_seguindo)))
@@ -502,10 +645,10 @@ def extrair_e_baixar_fotos(page, username_alvo, max_scrolls=6):
         "total_stories_baixados": len(stories_coletados),
         "stories_arquivos": stories_coletados,
         "total_fotos_feed": len(feed_baixados),
-        "feed": midias_coletadas
+        "feed": midias_coletadas,
+        "engine_utilizada": engine_usada
     }
 
-    json_path = os.path.join(pasta_destino, "dados_perfil.json")
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(dados_completos, f, ensure_ascii=False, indent=4)
 

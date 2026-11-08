@@ -1,14 +1,1 @@
-[
-    {
-        "id": 1,
-        "nome": "Caso 1 Samuel",
-        "referencia": "Solicitado Pedro",
-        "descricao": "Quero tudo do samuel",
-        "status": "CONCLUIDO",
-        "alvos": [
-            "samu_barbosa1"
-        ],
-        "criado_em": "2026-10-30 23:45:44",
-        "atualizado_em": "2026-10-31 00:24:12"
-    }
-]
+[]

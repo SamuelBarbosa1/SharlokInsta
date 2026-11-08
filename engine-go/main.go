@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -55,7 +56,6 @@ func main() {
 	if pastaDestino == "" {
 		pastaDestino = filepath.Join("downloads", "@"+cleanUser)
 	}
-	_ = os.MkdirAll(pastaDestino, 0755)
 
 	logPrint := func(format string, a ...interface{}) {
 		if !*jsonOutputFlag {
@@ -70,11 +70,17 @@ func main() {
 
 	igClient := client.NewInstagramClient(*sessionIDFlag, *dsUserIDFlag)
 
-	// [1/5] Perfil e Biografia via REST
-	logPrint("\n[1/5] Extraindo Dados e Biografia via REST Web Profile...")
+	// [1/5] Perfil e Biografia via REST (com fallback automático /users/search/)
+	logPrint("\n[1/5] Extraindo Dados e Biografia via REST...")
 	perfilRes, err := igClient.ObterPerfil(cleanUser)
 	if err != nil {
 		emitirErro(*jsonOutputFlag, cleanUser, fmt.Sprintf("Erro ao obter perfil: %v", err))
+		if errors.Is(err, client.ErrPerfilNaoEncontrado) {
+			os.Exit(4)
+		}
+		if errors.Is(err, client.ErrSessaoExpirada) {
+			os.Exit(5)
+		}
 		os.Exit(2)
 	}
 
@@ -89,11 +95,18 @@ func main() {
 
 	isPrivadoNaoSeguido := u.IsPrivate && !u.FollowedByViewer
 	if isPrivadoNaoSeguido {
-		logPrint("\n[!] ALERTA OSINT: O perfil @%s é PRIVADO e a conta fantoche atual NÃO é seguidora aprovada.", cleanUser)
-		logPrint("    - Avatar HD e Biografia pública foram extraídos com sucesso.")
-		logPrint("    - Posts, mídias e conexões completas são bloqueados pela Meta até aprovação do pedido.")
-		logPrint("    - Dica: Envie solicitação de seguir via 'Alvos & Monitoramento' com o 'Sentinela 24/7' ativo.")
+		statusPedido := "NAO_SEGUINDO"
+		if u.RequestedByViewer {
+			statusPedido = "SOLICITADO (Aguardando aceite do alvo)"
+		}
+		logPrint("\n[!] ALERTA OSINT: O perfil @%s é PRIVADO e a conta fantoche ainda NÃO foi aceita (Status: %s).", cleanUser, statusPedido)
+		logPrint("    - Nenhuma pasta vazia foi criada em Mídias Extraídas para evitar falso positivo.")
+		logPrint("    - Dica: Mantenha o Sentinela 24/7 ativo para aguardar o aceite ou investigue @%s no Sherlock Multi-Redes!", cleanUser)
+		os.Exit(3)
 	}
+
+	// Só cria a pasta de destino após confirmar acesso válido ao perfil!
+	_ = os.MkdirAll(pastaDestino, 0755)
 
 	// Salva bio.txt
 	bioTxtPath := filepath.Join(pastaDestino, "bio.txt")
@@ -183,7 +196,7 @@ func main() {
 			}
 		}
 	}
-	logPrint("  [+] %d mídia(s) do feed enfileiradas para download concorrente.", len(downloadsQueue)-1)
+	logPrint("  [+] %d mídia(s) do feed enfileiradas para download concorrente.", fotoIdx)
 
 	// [3/5] Paginação REST de Seguidores
 	var listaSeguidores []string
@@ -260,6 +273,14 @@ func main() {
 	sort.Strings(apenasSeguidores)
 	sort.Strings(alvoSegueNaoSeguem)
 
+	// Atualiza contadores caso tenham vindo zerados no fallback mas a paginação retornou dados reais
+	if u.EdgeFollowedBy.Count == 0 && len(listaSeguidores) > 0 {
+		seguidoresCountStr = fmt.Sprintf("%d seguidores", len(listaSeguidores))
+	}
+	if u.EdgeFollow.Count == 0 && len(listaSeguindo) > 0 {
+		seguindoCountStr = fmt.Sprintf("%d seguindo", len(listaSeguindo))
+	}
+
 	// Salva seguidores.txt
 	_ = salvarListaTxt(filepath.Join(pastaDestino, "seguidores.txt"), fmt.Sprintf("=== SEGUIDORES DE @%s ===\nTotal: %d\n\n", cleanUser, len(listaSeguidores)), listaSeguidores)
 	// Salva seguindo.txt
@@ -281,9 +302,14 @@ func main() {
 	dlResults := pool.DownloadAll(downloadsQueue, onDlProg)
 
 	arquivosBaixadosComSucesso := 0
+	fotosFeedBaixadas := 0
 	for _, res := range dlResults {
 		if res.Error == nil {
 			arquivosBaixadosComSucesso++
+			baseName := filepath.Base(res.Item.DestPath)
+			if strings.HasPrefix(baseName, "foto_") {
+				fotosFeedBaixadas++
+			}
 		}
 	}
 
@@ -325,7 +351,8 @@ func main() {
 		"destaques_arquivos":       []string{},
 		"total_stories_baixados":   0,
 		"stories_arquivos":         []string{},
-		"total_fotos_feed":         arquivosBaixadosComSucesso,
+		"total_fotos_feed":         fotosFeedBaixadas,
+		"posts_esperados":          u.EdgeOwnerToTimelineMedia.Count,
 		"engine_utilizada":         "GOLANG_TURBO_REST",
 	}
 

@@ -33,7 +33,7 @@
     };
   </script>
   <script src="https://unpkg.com/lucide@latest"></script>
-  <link rel="stylesheet" href="/static/style.css?v=12">
+  <link rel="stylesheet" href="/static/style.css?v=16">
 </head>
 <body>
   <div class="layout">
@@ -67,9 +67,18 @@
           <i data-lucide="crosshair"></i>
           <span>Alvos & Monitoramento</span>
         </button>
+        <button class="nav-btn" data-tab="tab-sherlock">
+          <i data-lucide="scan-search"></i>
+          <span>Sherlock Multi-Redes</span>
+        </button>
         <button class="nav-btn" data-tab="tab-downloads">
           <i data-lucide="folder-down"></i>
           <span>Mídias Extraídas</span>
+        </button>
+        <button class="nav-btn" data-tab="tab-notas">
+          <i data-lucide="notebook-pen"></i>
+          <span>Bloco de Notas</span>
+          <span class="badge-count" id="badge-notas-count">0</span>
         </button>
         <button class="nav-btn" data-tab="tab-logs">
           <i data-lucide="terminal"></i>
@@ -129,6 +138,10 @@
           </div>
         </div>
         <div class="topbar-actions">
+          <button id="btn-open-notas-rapidas" class="btn-secondary" title="Abrir Bloco de Notas Rápido (Onde Parei)">
+            <i data-lucide="notebook-pen" class="text-gh-yellow"></i>
+            <span>Bloco de Notas</span>
+          </button>
           <button id="btn-quick-check" class="btn-secondary">
             <i data-lucide="refresh-cw"></i>
             <span>Verificar Solicitações</span>
@@ -244,7 +257,7 @@
               <p class="subtitle">Organize cada investigação em seu próprio perfil para nunca perder o vínculo entre casos, alvos investigados e mídias coletadas.</p>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
-              <button class="btn-secondary" id="btn-refresh-casos" onclick="atualizarCasosComFeedback(this)">
+              <button class="btn-secondary" id="btn-refresh-casos">
                 <i data-lucide="refresh-cw"></i>
                 <span>Atualizar</span>
               </button>
@@ -283,7 +296,11 @@
               </h3>
               <p class="subtitle">Adicione várias contas para rotação automática, distribuição em massa e cascata de rejeição</p>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 flex-wrap">
+              <button class="btn-secondary" id="btn-refresh-contas">
+                <i data-lucide="refresh-cw"></i>
+                <span>Atualizar</span>
+              </button>
               <button class="btn-secondary" id="btn-testar-todas-contas">
                 <i data-lucide="shield-check"></i>
                 <span>Testar Todo o Pool</span>
@@ -410,6 +427,215 @@
                 </thead>
                 <tbody id="alvos-tbody">
                   <tr><td colspan="7" class="text-center">Carregando lista de alvos...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABA 5: INVESTIGAÇÃO MULTI-REDES (SHERLOCK OSINT) -->
+      <section id="tab-sherlock" class="tab-pane">
+        <div class="panel">
+          <!-- Cabeçalho Sherlock -->
+          <div class="panel-header flex-wrap gap-2">
+            <div>
+              <h3 class="flex items-center gap-2">
+                <i data-lucide="scan-search" class="text-gh-blue"></i>
+                <span>Investigação Multi-Redes & Plataformas (Sherlock OSINT)</span>
+              </h3>
+              <p class="subtitle">Quando o alvo demorar a aceitar, for privado ou você quiser aprofundar as provas, descubra em quais das 480+ redes sociais o mesmo @username está cadastrado.</p>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="badge badge-blue">
+                <i data-lucide="database" style="width:12px;height:12px;"></i>
+                <span>480+ Redes no Manifesto</span>
+              </span>
+              <span class="badge badge-green">
+                <i data-lucide="zap" style="width:12px;height:12px;"></i>
+                <span>35 Workers Paralelos</span>
+              </span>
+            </div>
+          </div>
+
+          <!-- Formulário de Disparo de Varredura -->
+          <div class="bg-gh-bg border border-gh-border rounded-lg p-5 space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+              <!-- Username Alvo -->
+              <div class="md:col-span-5">
+                <label class="label-tech block mb-1">
+                  <i data-lucide="at-sign" style="width:13px;height:13px;" class="inline text-gh-blue"></i>
+                  <span>Username do Alvo a Investigar:</span>
+                </label>
+                <div class="flex gap-2">
+                  <input type="text" id="sherlock-input-username" class="input-text font-mono" placeholder="ex: samu_barbosa1 (sem @)">
+                  <!-- Dropdown de atalho com alvos já cadastrados no Instagram -->
+                  <select id="sherlock-select-atalho-alvos" class="input-select" style="max-width:160px; font-size:11.5px;" onchange="selecionarAlvoAtalhoSherlock(this.value)">
+                    <option value="">Puxar dos Alvos...</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Modo de Varredura -->
+              <div class="md:col-span-4">
+                <label class="label-tech block mb-1">
+                  <i data-lucide="layers" style="width:13px;height:13px;" class="inline text-gh-yellow"></i>
+                  <span>Abrangência da Busca:</span>
+                </label>
+                <select id="sherlock-select-modo" class="input-select">
+                  <option value="principais" selected>⚡ Principais Redes (~60 redes rápidas: TikTok, Twitter, Telegram, Reddit, Steam...)</option>
+                  <option value="todos">🌐 Varredura Completa (Todas as 480+ redes do manifesto Sherlock)</option>
+                </select>
+              </div>
+
+              <!-- Vincular ao Caso (Opcional) -->
+              <div class="md:col-span-3">
+                <label class="label-tech block mb-1">
+                  <i data-lucide="briefcase" style="width:13px;height:13px;" class="inline text-gh-blue"></i>
+                  <span>Vincular ao Caso (Opcional):</span>
+                </label>
+                <select id="sherlock-select-caso" class="input-select">
+                  <option value="">Sem caso específico</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Opções adicionais e Botões de Ação -->
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-3 border-t border-gh-border">
+              <label class="inline-flex items-center gap-2 cursor-pointer text-xs text-gh-muted select-none">
+                <input type="checkbox" id="sherlock-chk-nsfw" class="rounded bg-gh-card border-gh-border text-gh-blue">
+                <span>Incluir sites de conteúdo adulto / NSFW na busca</span>
+              </label>
+
+              <div class="flex items-center gap-2">
+                <button type="button" class="btn-primary" id="btn-iniciar-sherlock" onclick="iniciarVarreduraSherlock()">
+                  <i data-lucide="scan-search"></i>
+                  <span>Iniciar Varredura OSINT</span>
+                </button>
+                <button type="button" class="btn-secondary-sm" id="btn-cancelar-sherlock" onclick="cancelarVarreduraSherlock()" style="display:none; color:var(--danger); border-color:rgba(248,81,73,0.45);">
+                  <i data-lucide="square"></i>
+                  <span>Interromper</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card de Progresso ao Vivo -->
+          <div id="sherlock-box-progresso" style="display:none;" class="bg-gh-bg border border-gh-blue/40 rounded-lg p-5 space-y-4">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <div class="flex items-center gap-2.5">
+                <div id="sherlock-progresso-icon-box" class="w-9 h-9 rounded-full bg-gh-blue/15 border border-gh-blue/40 flex items-center justify-center text-gh-blue">
+                  <i data-lucide="loader-2" class="animate-spin" style="width:17px;height:17px;"></i>
+                </div>
+                <div>
+                  <h4 class="text-sm font-semibold text-gh-title flex items-center gap-2">
+                    <span id="sherlock-lbl-titulo-progresso">Sondando Redes Sociais para:</span>
+                    <strong class="font-mono text-gh-blue" id="sherlock-lbl-alvo">@usuario</strong>
+                  </h4>
+                  <p class="text-xs text-gh-muted" id="sherlock-lbl-status">Disparando sondas simultâneas com 35 threads...</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="badge badge-blue font-mono" id="sherlock-badge-progresso">0%</span>
+                <button type="button" class="btn-secondary-sm" onclick="document.getElementById('sherlock-box-progresso').style.display='none'" title="Ocultar barra de progresso">
+                  <i data-lucide="x"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Barra de Progresso Visual -->
+            <div class="w-full bg-gh-card border border-gh-border rounded-full h-3 overflow-hidden">
+              <div id="sherlock-prog-bar-fill" class="bg-gh-blue h-full transition-all duration-300" style="width: 0%;"></div>
+            </div>
+
+            <!-- Mini KPIs do Scan -->
+            <div class="grid grid-cols-3 gap-3 text-center text-xs">
+              <div class="bg-gh-panel border border-gh-border rounded p-2.5">
+                <span class="text-gh-muted block">Redes Analisadas</span>
+                <strong class="text-gh-title font-mono text-sm" id="sherlock-kpi-processados">0 / 0</strong>
+              </div>
+              <div class="bg-gh-panel border border-gh-border rounded p-2.5">
+                <span class="text-gh-muted block">Contas Encontradas</span>
+                <strong class="text-gh-green font-mono text-sm" id="sherlock-kpi-encontrados">0</strong>
+              </div>
+              <div class="bg-gh-panel border border-gh-border rounded p-2.5">
+                <span class="text-gh-muted block">Tempo Decorrido</span>
+                <strong class="text-gh-blue font-mono text-sm" id="sherlock-kpi-tempo">0.0s</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card de Resultados / Descobertas -->
+          <div id="sherlock-box-resultados" style="display:none;" class="space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-gh-border pb-3">
+              <div class="flex items-center gap-2">
+                <h4 class="text-sm font-semibold text-gh-title flex items-center gap-2">
+                  <i data-lucide="check-circle-2" class="text-gh-green"></i>
+                  <span>Perfis Identificados na Web</span>
+                </h4>
+                <span class="badge badge-green font-mono" id="sherlock-count-badge">0 encontrados</span>
+              </div>
+
+              <div class="flex items-center gap-2 flex-wrap">
+                <input type="text" id="sherlock-filtro-busca" class="input-text" style="width:180px; padding:6px 10px; font-size:12.5px;" placeholder="Filtrar por rede..." oninput="filtrarCardsSherlock()">
+                <button type="button" class="btn-secondary-sm" onclick="exportarSherlockAtual('csv')" title="Baixar relatório em planilha Excel (.CSV)">
+                  <i data-lucide="file-spreadsheet" class="text-gh-green"></i>
+                  <span>Exportar CSV</span>
+                </button>
+                <button type="button" class="btn-secondary-sm" onclick="exportarSherlockAtual('txt')" title="Baixar relatório em texto puro (.TXT)">
+                  <i data-lucide="file-text"></i>
+                  <span>Exportar TXT</span>
+                </button>
+                <button type="button" class="btn-secondary-sm" onclick="fecharResultadosSherlock()" title="Fechar resultados exibidos" style="color:var(--text-muted);">
+                  <i data-lucide="x"></i>
+                  <span>Fechar</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Grade de Cartões de Redes Encontradas -->
+            <div id="sherlock-grid-resultados" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+              <!-- Preenchido via Javascript -->
+            </div>
+          </div>
+
+          <!-- Histórico de Varreduras Recentes -->
+          <div class="bg-gh-bg border border-gh-border rounded-lg p-5 space-y-3" id="sherlock-box-historico">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <h4 class="text-sm font-semibold text-gh-title flex items-center gap-2">
+                <i data-lucide="history" class="text-gh-muted"></i>
+                <span>Histórico de Investigações Multi-Redes Recentes</span>
+              </h4>
+              <div class="flex items-center gap-2 flex-wrap">
+                <button type="button" class="btn-secondary-sm" id="btn-toggle-historico-sherlock" onclick="toggleHistoricoSherlock()" title="Ocultar / Exibir tabela de histórico">
+                  <i data-lucide="chevron-up"></i>
+                  <span>Recolher</span>
+                </button>
+                <button type="button" class="btn-secondary-sm" id="btn-refresh-sherlock" onclick="atualizarSherlockComFeedback(this)" title="Recarregar lista do banco de dados">
+                  <i data-lucide="refresh-cw"></i>
+                  <span>Atualizar</span>
+                </button>
+                <button type="button" class="btn-secondary-sm" onclick="limparTodoHistoricoSherlock()" style="color:var(--danger); border-color:rgba(248,81,73,0.4);" title="Excluir todo o histórico de buscas Sherlock">
+                  <i data-lucide="trash-2"></i>
+                  <span>Limpar Histórico</span>
+                </button>
+              </div>
+            </div>
+            <div class="table-container" id="sherlock-box-historico-tabela">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Alvo (@)</th>
+                    <th>Abrangência</th>
+                    <th>Redes Testadas</th>
+                    <th>Perfis Confirmados</th>
+                    <th>Tempo</th>
+                    <th>Data / Hora</th>
+                    <th style="min-width:130px;">Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="sherlock-tbody-historico">
+                  <tr><td colspan="7" class="text-center text-muted">Carregando histórico...</td></tr>
                 </tbody>
               </table>
             </div>
@@ -556,6 +782,135 @@
         </div>
       </section>
 
+      <!-- ABA NOVA: BLOCO DE NOTAS & DIÁRIO DE INVESTIGAÇÃO ("ONDE PAREI") -->
+      <section id="tab-notas" class="tab-pane">
+        <div class="space-y-4">
+          <!-- QUADRO FIXO RÁPIDO: ONDE PAREI / PRÓXIMOS PASSOS -->
+          <div class="panel" style="border-color:rgba(210,153,34,0.4);">
+            <div class="panel-header flex-wrap gap-3" style="margin-bottom:10px;">
+              <div>
+                <h3 class="flex items-center gap-2">
+                  <i data-lucide="bookmark-check" class="text-gh-yellow"></i>
+                  <span>Diário Rápido: Onde Parei & Próximos Passos</span>
+                </h3>
+                <p class="subtitle">Escreva livremente o que já fez, em qual perfil parou e o que falta investigar. Tudo é salvo automaticamente no banco SQLite!</p>
+              </div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="status-pill" id="notas-rascunho-status">
+                  <i data-lucide="check-circle-2" class="text-gh-green"></i>
+                  <span>Sincronizado no SQLite</span>
+                </span>
+                <button type="button" class="btn-secondary-sm" onclick="salvarRascunhoRapidoManual(this)">
+                  <i data-lucide="save"></i>
+                  <span>Salvar Rascunho</span>
+                </button>
+                <a href="/api/notas/exportar" class="btn-secondary-sm" style="text-decoration:none;" title="Baixar todas as anotações e rascunho em arquivo .TXT">
+                  <i data-lucide="download" class="text-gh-blue"></i>
+                  <span>Exportar .TXT</span>
+                </a>
+              </div>
+            </div>
+            <textarea id="notas-rascunho-texto" class="input-textarea" rows="5" style="font-size:15px; line-height:1.6;" placeholder="Exemplo:&#10;- [Hoje 19:15] Enviei solicitação para @alvo_1 via @conta_2 (aguardando aceitar).&#10;- Já rodei Sherlock no @alvo_1: achei conta ativa no TikTok e Steam, falta analisar amigos em comum amanhã..." oninput="agendarAutoSaveRascunho(this.value)"></textarea>
+          </div>
+
+          <!-- GERENCIADOR DE CARTÕES DE ANOTAÇÕES -->
+          <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
+            <!-- Coluna 1: Formulário Criar / Editar Nota -->
+            <div class="panel xl:col-span-1">
+              <div class="panel-header" style="margin-bottom:10px;">
+                <h3 class="flex items-center gap-2" id="form-nota-titulo-header">
+                  <i data-lucide="file-plus-2" class="text-gh-blue"></i>
+                  <span>Nova Anotação</span>
+                </h3>
+                <button type="button" class="btn-secondary-sm" id="btn-cancelar-edicao-nota" style="display:none;" onclick="limparFormularioNota()">
+                  <i data-lucide="x"></i>
+                  <span>Cancelar Edição</span>
+                </button>
+              </div>
+
+              <input type="hidden" id="nota-input-id" value="">
+
+              <label class="label">Título / Resumo da Anotação *:</label>
+              <input type="text" id="nota-input-titulo" class="input-text mb-2.5" placeholder="Ex: Pistas encontradas no TikTok do @alvo">
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-2.5">
+                <div>
+                  <label class="label">Categoria:</label>
+                  <select id="nota-input-categoria" class="input-select">
+                    <option value="ONDE_PAREI">Onde Parei / Checkpoint</option>
+                    <option value="PISTA">Pista / Evidência</option>
+                    <option value="PENDENCIA">Pendência / Tarefa</option>
+                    <option value="GERAL">Observação Geral</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="label">@Alvo Relacionado (Opcional):</label>
+                  <input type="text" id="nota-input-alvo" class="input-text" placeholder="ex: samu_barbosa1">
+                </div>
+              </div>
+
+              <label class="label">Vincular a um Caso / Dossiê (Opcional):</label>
+              <select id="nota-select-caso" class="input-select mb-2.5">
+                <option value="">Sem caso específico (Geral)</option>
+              </select>
+
+              <label class="label">Detalhes da Anotação:</label>
+              <textarea id="nota-input-conteudo" class="input-textarea" rows="6" style="font-size:14.5px;" placeholder="Descreva links encontrados, horários, conexões suspeitas ou lembretes para continuar depois..."></textarea>
+
+              <label class="flex items-center gap-2 text-sm text-gh-title cursor-pointer mt-2.5 select-none">
+                <input type="checkbox" id="nota-chk-fixada" class="w-4 h-4 accent-[#d29922]">
+                <span>Fixar esta anotação no topo da lista</span>
+              </label>
+
+              <button type="button" class="btn-primary w-full mt-3.5" id="btn-salvar-nota" onclick="salvarNotaOperacional()">
+                <i data-lucide="check"></i>
+                <span>Salvar Anotação</span>
+              </button>
+            </div>
+
+            <!-- Coluna 2 e 3: Lista de Anotações Salvas -->
+            <div class="panel xl:col-span-2">
+              <div class="panel-header flex-wrap gap-2">
+                <div>
+                  <h3 class="flex items-center gap-2">
+                    <i data-lucide="notebook-pen" class="text-gh-blue"></i>
+                    <span>Caderno de Anotações Salvas</span>
+                  </h3>
+                  <p class="subtitle">Filtre por tipo de lembrete, pesquise por @alvo ou fixe anotações prioritárias no topo.</p>
+                </div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <button type="button" class="btn-secondary-sm" id="btn-refresh-notas" onclick="atualizarNotasComFeedback(this)">
+                    <i data-lucide="refresh-cw"></i>
+                    <span>Atualizar</span>
+                  </button>
+                  <button type="button" class="btn-secondary-sm" onclick="limparTodasNotasUI()" style="color:var(--danger); border-color:rgba(248,81,73,0.4);">
+                    <i data-lucide="trash-2"></i>
+                    <span>Limpar Notas</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="flex flex-col md:flex-row md:items-center justify-between gap-2.5 mb-4 pb-3 border-b border-gh-border">
+                <div class="flex-1 max-w-sm">
+                  <input type="text" id="input-busca-notas" class="input-text" placeholder="Buscar nas anotações ou @alvo..." oninput="renderizarGridNotas()">
+                </div>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <button type="button" class="filter-chip active" data-nota-cat="TODAS" onclick="filtrarCategoriaNotas('TODAS', this)">Todas</button>
+                  <button type="button" class="filter-chip" data-nota-cat="ONDE_PAREI" onclick="filtrarCategoriaNotas('ONDE_PAREI', this)">Onde Parei</button>
+                  <button type="button" class="filter-chip" data-nota-cat="PISTA" onclick="filtrarCategoriaNotas('PISTA', this)">Pistas</button>
+                  <button type="button" class="filter-chip" data-nota-cat="PENDENCIA" onclick="filtrarCategoriaNotas('PENDENCIA', this)">Pendências</button>
+                  <button type="button" class="filter-chip" data-nota-cat="FIXADAS" onclick="filtrarCategoriaNotas('FIXADAS', this)">Fixadas</button>
+                </div>
+              </div>
+
+              <div id="notas-grid-cards" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <p class="text-center col-span-full text-gh-muted py-6">Carregando anotações...</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- ABA 7: MANUAL & TREINAMENTO INTEGRADO (TAILWIND + LUCIDE) -->
       <section id="tab-manual" class="tab-pane">
         <!-- Cabeçalho da Central de Treinamento -->
@@ -584,6 +939,10 @@
               <button class="filter-chip" onclick="alternarSecaoManual('golang', this)">
                 <i data-lucide="zap"></i>
                 <span>Motor Go Turbo (REST)</span>
+              </button>
+              <button class="filter-chip" onclick="alternarSecaoManual('sherlock', this)">
+                <i data-lucide="scan-search"></i>
+                <span>Sherlock Multi-Redes OSINT</span>
               </button>
               <button class="filter-chip" onclick="alternarSecaoManual('status', this)">
                 <i data-lucide="shield-check"></i>
@@ -904,6 +1263,72 @@
             </div>
           </div>
 
+          <!-- SUB-ABA SHERLOCK: INVESTIGAÇÃO MULTI-REDES OSINT -->
+          <div id="manual-sec-sherlock" style="display:none;" class="space-y-4">
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <!-- Card 1: Como funciona o Sherlock -->
+              <div class="bg-gh-bg border border-gh-border rounded-lg p-5 flex flex-col justify-between gap-4 hover:border-gh-blue/40 transition">
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between">
+                    <span class="inline-flex items-center gap-1.5 text-[11px] font-mono font-semibold text-gh-blue bg-gh-blue/10 border border-gh-blue/30 px-2.5 py-0.5 rounded">
+                      <i data-lucide="scan-search" style="width:12px;height:12px;"></i>
+                      VARREDURA OSINT EM 480+ REDES
+                    </span>
+                    <span class="badge badge-green">35 Threads Simultâneas</span>
+                  </div>
+                  <h4 class="text-sm font-semibold text-gh-title">Investigação Cruzada de Identidade Sem Seguir</h4>
+                  <p class="text-xs text-gh-muted leading-relaxed">
+                    Quando o alvo tem perfil trancado, demora para aceitar ou você precisa cruzar dados de forma discreta, o Sherlock sonda centenas de serviços online pelo mesmo username.
+                  </p>
+                  <ul class="list-disc pl-4 space-y-1.5 text-xs text-gh-muted">
+                    <li><strong class="text-gh-text">Modo Rápido (~60 principais redes):</strong> Varre em ~10 segundos redes populares como TikTok, Twitter, Telegram, Reddit, Steam, Roblox, GitHub, Spotify, Kaggle e YouTube.</li>
+                    <li><strong class="text-gh-text">Modo Completo (480+ redes):</strong> Sonda todo o ecossistema incluindo fóruns, jogos, repositórios e serviços de pagamentos.</li>
+                    <li><strong class="text-gh-text">Filtro NSFW Opcional:</strong> Permite incluir ou ignorar redes e sites adultos.</li>
+                    <li><strong class="text-gh-text">Isolamento de Dados:</strong> As buscas ficam gravadas no histórico e banco de dados, sem poluir a pasta de mídias de Instagram.</li>
+                  </ul>
+                </div>
+                <div class="pt-2 border-t border-gh-border flex justify-end">
+                  <button class="btn-primary-sm" onclick="switchTab('tab-sherlock')">
+                    <span>Abrir Sherlock Multi-Redes</span>
+                    <i data-lucide="arrow-up-right"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Card 2: Exportação e Gestão de Histórico -->
+              <div class="bg-gh-bg border border-gh-border rounded-lg p-5 flex flex-col justify-between gap-4 hover:border-gh-blue/40 transition">
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between">
+                    <span class="inline-flex items-center gap-1.5 text-[11px] font-mono font-semibold text-gh-yellow bg-gh-yellow/10 border border-gh-yellow/30 px-2.5 py-0.5 rounded">
+                      <i data-lucide="file-spreadsheet" style="width:12px;height:12px;"></i>
+                      RELATÓRIOS & CONTROLES
+                    </span>
+                    <span class="text-[11px] text-gh-muted font-mono">Excel & TXT</span>
+                  </div>
+                  <h4 class="text-sm font-semibold text-gh-title">Exportação Forense & Limpeza de Histórico</h4>
+                  <p class="text-xs text-gh-muted leading-relaxed">
+                    Cada investigação gera relatórios prontos para anexar a relatórios técnicos, apresentações ou processos periciais.
+                  </p>
+                  <div class="space-y-2 text-xs text-gh-muted">
+                    <div class="bg-gh-panel border border-gh-border rounded p-3 space-y-1">
+                      <strong class="text-gh-title block">Recursos Operacionais:</strong>
+                      <p>• <strong class="text-gh-green">Exportar CSV:</strong> Planilha compatível com Excel (UTF-8 com BOM e ponto-e-vírgula).</p>
+                      <p>• <strong class="text-gh-blue">Exportar TXT:</strong> Relatório em texto puro formatado com data, hora e links clicáveis.</p>
+                      <p>• <strong class="text-gh-text">Excluir e Limpar:</strong> Botão individual de exclusão de varredura ou limpeza completa do histórico com 1 clique.</p>
+                      <p>• <strong class="text-gh-text">Fechar / Recolher:</strong> Botão de fechar resultados e recolher a tabela de histórico para manter a tela limpa.</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="pt-2 border-t border-gh-border flex justify-end">
+                  <button class="btn-secondary-sm" onclick="switchTab('tab-casos')">
+                    <span>Vincular a Dossiês</span>
+                    <i data-lucide="arrow-up-right"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- SUB-ABA 4: DICIONÁRIO DE STATUS & PROTOCOLO ANTI-BLOQUEIO -->
           <div id="manual-sec-status" style="display:none;" class="space-y-6">
             <div>
@@ -1089,6 +1514,19 @@
                 Não! Implementamos a rotina de limpeza de vínculos de alvos: ao excluir um alvo (individualmente, em lote ou limpando tudo), a rotina <code>desvincular_alvos_excluidos()</code> remove automaticamente a menção do alvo de todos os casos em <code>casos_investigacao.json</code> e sincroniza no SQLite. Assim, os contadores e cartões de Casos permanecem sempre 100% consistentes.
               </div>
             </div>
+
+            <div class="bg-gh-bg border border-gh-border rounded-lg overflow-hidden">
+              <button type="button" class="w-full flex items-center justify-between p-4 text-left text-xs font-semibold text-gh-title hover:bg-gh-card/60 transition cursor-pointer bg-transparent border-0" onclick="toggleFaqItem(this)">
+                <span class="flex items-center gap-2">
+                  <i data-lucide="help-circle" class="text-gh-blue"></i>
+                  <span>9. Como usar o Bloco de Notas para não esquecer onde parei uma investigação?</span>
+                </span>
+                <i data-lucide="chevron-down" class="text-gh-muted transition-transform"></i>
+              </button>
+              <div class="px-4 pb-4 text-xs text-gh-muted leading-relaxed" style="display:none;">
+                Você pode acessar o <strong>Bloco de Notas</strong> de duas formas: pelo menu lateral completo (com categorias <em>Onde Parei</em>, <em>Pista</em>, <em>Pendência</em>, vínculo a Casos e exportação <code>.TXT</code>) ou clicando no botão rápido <strong>Bloco de Notas</strong> no topo direito de qualquer tela! O quadro <em>"Onde Parei & Próximos Passos"</em> possui salvamento automático no SQLite enquanto você digita, e notas vinculadas a um Caso também entram automaticamente no pacote <code>Dossie.zip</code>!
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -1102,8 +1540,8 @@
               <i data-lucide="git-pull-request" style="width:18px;height:18px;"></i>
             </div>
             <div>
-              <div class="text-[11px] text-gh-muted">Release Atual</div>
-              <div class="text-base font-bold font-mono text-gh-title">v2.8.0</div>
+              <div class="text-[11px] text-gh-muted">Release Atual • 07/11/2026</div>
+              <div class="text-base font-bold font-mono text-gh-title">v3.1.0</div>
             </div>
           </div>
           <div class="bg-gh-panel border border-gh-border rounded-lg p-3.5 flex items-center gap-3">
@@ -1181,6 +1619,110 @@
 
           <!-- Timeline Vertical de Releases -->
           <div class="changelog-list relative border-l-2 border-gh-border ml-2 pl-5 space-y-5" id="changelog-list">
+            <!-- v3.1.0 -->
+            <div class="changelog-version-card relative">
+              <span class="absolute -left-[27px] top-5 w-3 h-3 rounded-full bg-gh-green ring-4 ring-gh-panel"></span>
+              <div class="changelog-header">
+                <h4>
+                  <span class="version-pill">v3.1.0</span>
+                  <span>Novo Design de Casos & Mídias Extraídas, Fallback HTML+REST no Golang e Captura de Vídeos Blob</span>
+                </h4>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="badge badge-green font-mono text-[11px]"><i data-lucide="calendar" style="width:11px;height:11px;"></i><span>07/11/2026</span></span>
+                  <span class="attempt-tag">engine-go/client/instagram.go</span>
+                  <span class="attempt-tag">scraper/extractor.py</span>
+                  <span class="attempt-tag">static/app.js</span>
+                  <span class="attempt-tag">static/style.css</span>
+                </div>
+              </div>
+              <div class="changelog-items">
+                <div class="changelog-item" data-chg="ALTERADO">
+                  <span class="chg-tag chg-changed"><i data-lucide="refresh-cw"></i>ALTERADO</span>
+                  <div><strong>Novo Visual de Casos & Dossiês e Mídias Extraídas (07/11/2026):</strong> Cards de Casos reformulados com barra de progresso percentual, data de criação, referência destacada e chips interativos. Cards de Mídias Extraídas agora exibem a foto real de Avatar do perfil coletado, badge da engine utilizada, horário da extração e painel de conexões mútuas.</div>
+                </div>
+                <div class="changelog-item" data-chg="ARRUMADO">
+                  <span class="chg-tag chg-fixed"><i data-lucide="wrench"></i>ARRUMADO</span>
+                  <div><strong>Motor Golang Turbo REST Imune a Bloqueio 404/429 em Perfis Públicos (07/11/2026):</strong> Implementado segundo fallback <code>obterPerfilFallbackHTML()</code> em <code>engine-go/client/instagram.go</code> que extrai o <code>PK</code> numérico, biografia e contadores diretamente do documento HTML + <code>/api/v1/friendships/show/</code>, além de suportar IDs em formato string ou numérico na paginação de seguidores/seguindo e complementação híbrida de mídias.</div>
+                </div>
+                <div class="changelog-item" data-chg="ARRUMADO">
+                  <span class="chg-tag chg-fixed"><i data-lucide="wrench"></i>ARRUMADO</span>
+                  <div><strong>Correção do Erro <code>blob:https://...</code> em Destaques e Stories 24h (07/11/2026):</strong> O extrator Playwright agora intercepta os fluxos reais <code>.mp4</code> da CDN/GraphQL da Meta via rede e valida esquemas HTTP antes do download, eliminando o erro <code>No connection adapters were found for 'blob:...'</code>.</div>
+                </div>
+                <div class="changelog-item" data-chg="ARRUMADO">
+                  <span class="chg-tag chg-fixed"><i data-lucide="wrench"></i>ARRUMADO</span>
+                  <div><strong>Correção do Spinner Infinito no Sherlock Multi-Redes e Contador "N/A" (07/11/2026):</strong> Ao atingir 100% da varredura Sherlock, o ícone rotativo para imediatamente e muda para check verde (<em>Varredura Concluída</em>). Contadores de posts em perfis com 1 publicação ou layout multilinhas agora são normalizados sem exibir <code>N/A</code>.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- v3.0.0 -->
+            <div class="changelog-version-card relative">
+              <span class="absolute -left-[27px] top-5 w-3 h-3 rounded-full bg-gh-blue ring-4 ring-gh-panel"></span>
+              <div class="changelog-header">
+                <h4>
+                  <span class="version-pill">v3.0.0</span>
+                  <span>Bloco de Notas Operacional ("Onde Parei"), Melhoria Global de Fontes & Correções Sherlock</span>
+                </h4>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="badge badge-blue font-mono text-[11px]"><i data-lucide="calendar" style="width:11px;height:11px;"></i><span>07/11/2026</span></span>
+                  <span class="attempt-tag">core/notes.py</span>
+                  <span class="attempt-tag">app.py</span>
+                  <span class="attempt-tag">static/app.js</span>
+                  <span class="attempt-tag">static/style.css</span>
+                </div>
+              </div>
+              <div class="changelog-items">
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Módulo Bloco de Notas & Diário "Onde Parei" (07/11/2026):</strong> Rascunho inteligente com salvamento automático no SQLite e cartões de anotações categorizados (<em>Onde Parei</em>, <em>Pista</em>, <em>Pendência</em>, <em>Geral</em>), vinculáveis a Casos e <code>@alvos</code>, acessível de qualquer tela pelo topo.</div>
+                </div>
+                <div class="changelog-item" data-chg="ARRUMADO">
+                  <span class="chg-tag chg-fixed"><i data-lucide="wrench"></i>ARRUMADO</span>
+                  <div><strong>Exportação CSV/TXT no Sherlock e Alternância do Botão Ver/Ocultar (07/11/2026):</strong> Corrigida exportação de relatórios CSV/TXT no Sherlock OSINT, botão <code>[ Ver / Ocultar ]</code> no histórico para abrir e fechar a grade de resultados e isolamento de buscas Sherlock fora da aba de Mídias Extraídas.</div>
+                </div>
+                <div class="changelog-item" data-chg="ALTERADO">
+                  <span class="chg-tag chg-changed"><i data-lucide="refresh-cw"></i>ALTERADO</span>
+                  <div><strong>Tipografia Ampliada no Painel e no Manual & Treinamento (07/11/2026):</strong> Aumento global das fontes em tabelas, formulários, badges e na Central de Treinamento para leitura mais confortável.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- v2.9.0 -->
+            <div class="changelog-version-card relative">
+              <span class="absolute -left-[27px] top-5 w-3 h-3 rounded-full bg-gh-blue ring-4 ring-gh-panel"></span>
+              <div class="changelog-header">
+                <h4>
+                  <span class="version-pill">v2.9.0</span>
+                  <span>Investigação Multi-Redes (Sherlock OSINT) integrada com 480+ Plataformas</span>
+                </h4>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="badge badge-blue font-mono text-[11px]"><i data-lucide="calendar" style="width:11px;height:11px;"></i><span>07/11/2026</span></span>
+                  <span class="attempt-tag">core/sherlock_engine.py</span>
+                  <span class="attempt-tag">Sherlock/resources/data.json</span>
+                  <span class="attempt-tag">templates/index.html</span>
+                  <span class="attempt-tag">static/app.js</span>
+                </div>
+              </div>
+              <div class="changelog-items">
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Módulo Sherlock OSINT Multi-Plataformas:</strong> Localização de contas associadas ao mesmo username em mais de 480 redes sociais e serviços web (TikTok, Twitter/X, Telegram, Reddit, Steam, YouTube, etc.) caso o alvo demore a aceitar ou recuse o Instagram.</div>
+                </div>
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Motor Paralelo de 35 Workers:</strong> Varreduras ultrarrápidas com dois modos selecionáveis: <em>Principais Redes (~60 redes em 8 segundos)</em> ou <em>Varredura Completa (480+ redes em menos de 25 segundos)</em>.</div>
+                </div>
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Atalho em 1 Clique na Tabela de Alvos:</strong> Botão <code>[ 🔎 Sherlock ]</code> ao lado de cada alvo na aba de monitoramento, permitindo disparar a busca instantaneamente.</div>
+                </div>
+                <div class="changelog-item" data-chg="ACRESCENTADO">
+                  <span class="chg-tag chg-added"><i data-lucide="plus-circle"></i>ACRESCENTADO</span>
+                  <div><strong>Exportação CSV/TXT e Vínculo ao Dossiê:</strong> Resultados exportáveis para Excel e salvos automaticamente dentro da pasta do alvo (<code>downloads/@username/</code>), sendo incluídos no arquivo <code>.ZIP</code> do Caso de Investigação.</div>
+                </div>
+              </div>
+            </div>
+
             <!-- v2.8.0 -->
             <div class="changelog-version-card relative">
               <span class="absolute -left-[27px] top-5 w-3 h-3 rounded-full bg-gh-blue ring-4 ring-gh-panel"></span>
@@ -1190,6 +1732,7 @@
                   <span>Feedback do Botão Atualizar, Auditoria Profunda de Bugs e Expansão do Treinamento</span>
                 </h4>
                 <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="badge badge-gray font-mono text-[11px]"><i data-lucide="calendar" style="width:11px;height:11px;"></i><span>31/10/2026</span></span>
                   <span class="attempt-tag">engine-go/</span>
                   <span class="attempt-tag">templates/index.html</span>
                   <span class="attempt-tag">static/app.js</span>
@@ -1229,6 +1772,7 @@
                   <span>Motor Híbrido Golang Turbo REST & Download Concorrente via Goroutines</span>
                 </h4>
                 <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="badge badge-gray font-mono text-[11px]"><i data-lucide="calendar" style="width:11px;height:11px;"></i><span>30/10/2026</span></span>
                   <span class="attempt-tag">engine-go/</span>
                   <span class="attempt-tag">bin/sharlok-engine.exe</span>
                   <span class="attempt-tag">scraper/go_runner.py</span>
@@ -1259,6 +1803,7 @@
                   <span>Gestão de Casos & Perfis de Investigação (Dossiês Multi-Alvos)</span>
                 </h4>
                 <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="badge badge-gray font-mono text-[11px]"><i data-lucide="calendar" style="width:11px;height:11px;"></i><span>29/10/2026</span></span>
                   <span class="attempt-tag">core/cases.py</span>
                   <span class="attempt-tag">app.py</span>
                   <span class="attempt-tag">templates/index.html</span>
@@ -1289,6 +1834,7 @@
                   <span>Padronização Visual Tailwind CSS, Ícones Vetoriais Lucide & Nova Central de Treinamento</span>
                 </h4>
                 <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="badge badge-gray font-mono text-[11px]"><i data-lucide="calendar" style="width:11px;height:11px;"></i><span>28/10/2026</span></span>
                   <span class="attempt-tag">templates/index.html</span>
                   <span class="attempt-tag">static/app.js</span>
                   <span class="attempt-tag">static/style.css</span>
@@ -1323,6 +1869,7 @@
                   <span>Parâmetros Dinâmicos, Testador em Lote do Pool, Galeria Visual & Exportação CSV</span>
                 </h4>
                 <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="badge badge-gray font-mono text-[11px]"><i data-lucide="calendar" style="width:11px;height:11px;"></i><span>27/10/2026</span></span>
                   <span class="attempt-tag">core/config.py</span>
                   <span class="attempt-tag">flows/monitor.py</span>
                   <span class="attempt-tag">app.py</span>
@@ -1361,6 +1908,7 @@
                   <span>Persistência SQLite para Servidor, 3 Modos de Abordagem & Streaming de Logs</span>
                 </h4>
                 <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="badge badge-gray font-mono text-[11px]"><i data-lucide="calendar" style="width:11px;height:11px;"></i><span>25/10/2026</span></span>
                   <span class="attempt-tag">core/database.py</span>
                   <span class="attempt-tag">core/pool.py</span>
                   <span class="attempt-tag">core/targets.py</span>
@@ -1399,6 +1947,7 @@
                   <span>Exclusão em Lote, Pacotes ZIP Remotos & Renovação de SessionID</span>
                 </h4>
                 <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="badge badge-gray font-mono text-[11px]"><i data-lucide="calendar" style="width:11px;height:11px;"></i><span>23/10/2026</span></span>
                   <span class="attempt-tag">app.py</span>
                   <span class="attempt-tag">static/app.js</span>
                 </div>
@@ -1436,6 +1985,7 @@
                   <span>Fundação do Painel Web, Motor Multi-Mídia OSINT & Cascata Anti-Vácuo</span>
                 </h4>
                 <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="badge badge-gray font-mono text-[11px]"><i data-lucide="calendar" style="width:11px;height:11px;"></i><span>20/10/2026</span></span>
                   <span class="attempt-tag">scraper/extractor.py</span>
                   <span class="attempt-tag">scraper/profile.py</span>
                   <span class="attempt-tag">flows/monitor.py</span>
@@ -1680,6 +2230,57 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=12"></script>
+  <!-- MODAL RÁPIDO: BLOCO DE NOTAS FLUTUANTE (ACESSÍVEL DE QUALQUER TELA) -->
+  <div class="modal" id="modal-notas-rapidas">
+    <div class="modal-card" style="width:680px; max-width:95vw;">
+      <div class="modal-header">
+        <h3 class="flex items-center gap-2">
+          <i data-lucide="notebook-pen" class="text-gh-yellow"></i>
+          <span>Bloco de Notas Rápido — Onde Parei & Lembretes</span>
+        </h3>
+        <button class="close-btn" onclick="fecharModal('modal-notas-rapidas')">&times;</button>
+      </div>
+      <div class="modal-body space-y-4">
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="label text-gh-title" style="margin-bottom:0;">Rascunho Automático (Onde Parei / Próximos Passos):</label>
+            <span class="text-xs font-mono text-gh-green" id="modal-rascunho-status-lbl">Salvo no SQLite</span>
+          </div>
+          <textarea id="modal-notas-rascunho-texto" class="input-textarea" rows="6" style="font-size:15px; line-height:1.6;" placeholder="Anote rapidamente onde parou, nicks descobertos ou próximas ações..." oninput="agendarAutoSaveRascunho(this.value, true)"></textarea>
+        </div>
+
+        <div class="pt-3 border-t border-gh-border">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-sm font-semibold text-gh-title flex items-center gap-1.5">
+              <i data-lucide="pin" class="text-gh-yellow" style="width:14px;height:14px;"></i>
+              <span>Últimas Anotações Fixadas / Recentes</span>
+            </span>
+            <button type="button" class="link-btn text-xs" onclick="fecharModal('modal-notas-rapidas'); switchTab('tab-notas');">Abrir Caderno Completo &rarr;</button>
+          </div>
+          <div id="modal-notas-recentes-lista" class="space-y-2 max-h-[200px] overflow-y-auto">
+            <p class="text-xs text-gh-muted">Nenhuma nota cadastrada ainda.</p>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content:space-between;">
+        <a href="/api/notas/exportar" class="btn-secondary-sm" style="text-decoration:none;">
+          <i data-lucide="download"></i>
+          <span>Baixar .TXT</span>
+        </a>
+        <div class="flex items-center gap-2">
+          <button type="button" class="btn-secondary" onclick="fecharModal('modal-notas-rapidas'); switchTab('tab-notas');">
+            <i data-lucide="maximize-2"></i>
+            <span>Ver Todas / Nova Nota</span>
+          </button>
+          <button type="button" class="btn-primary" onclick="fecharModal('modal-notas-rapidas')">
+            <i data-lucide="check"></i>
+            <span>Concluir</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=16"></script>
 </body>
 </html>

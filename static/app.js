@@ -2,8 +2,13 @@ let currentTab = 'tab-dashboard';
 let currentLogFilter = 'TODOS';
 let currentChangelogCategory = 'TODOS';
 let currentCasoStatusFilter = 'TODOS';
+let currentNotaCatFilter = 'TODAS';
 let cachedLogs = [];
 let cachedCasos = [];
+let cachedAlvos = [];
+let cachedNotas = [];
+let cachedDownloadsSet = new Set();
+let autoSaveRascunhoTimer = null;
 let wasTaskRunning = false;
 let lastPillStateKey = '';
 let activeDossieCasoId = null;
@@ -24,6 +29,8 @@ document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
   atualizarContadoresChangelog();
   loadAllData();
+  carregarHistoricoSherlock();
+  carregarNotasOperacionais();
 
   // Polling rápido para atualizar logs em tempo real (extração de fotos, stories, cascata)
   setInterval(refreshLogs, 1800);
@@ -55,7 +62,9 @@ function switchTab(tabId) {
     'tab-casos': 'Casos & Perfis de Investigação',
     'tab-contas': 'Pool de Contas Fantoches',
     'tab-alvos': 'Alvos & Monitoramento em Cascata',
+    'tab-sherlock': 'Sherlock Multi-Redes OSINT',
     'tab-downloads': 'Mídias e Perfis Extraídos',
+    'tab-notas': 'Bloco de Notas & Diário de Investigação',
     'tab-logs': 'Logs do Sistema',
     'tab-config': 'Configurações de Automação & Tempos',
     'tab-manual': 'Central de Treinamento & Manual Operacional',
@@ -70,16 +79,32 @@ function switchTab(tabId) {
     loadContas();
     loadAlvos();
   }
+  if (tabId === 'tab-sherlock') {
+    loadCasos();
+    loadAlvos();
+    carregarHistoricoSherlock();
+  }
   if (tabId === 'tab-downloads') {
     loadCasos();
     loadDownloads();
+  }
+  if (tabId === 'tab-notas') {
+    loadCasos();
+    carregarNotasOperacionais();
   }
   if (tabId === 'tab-config') loadConfiguracoes();
   if (tabId === 'tab-changelog') atualizarContadoresChangelog();
 }
 
 function setupEventListeners() {
-  document.getElementById('btn-quick-check').addEventListener('click', dispararVerificacao);
+  const btnQuickCheck = document.getElementById('btn-quick-check');
+  if (btnQuickCheck) {
+    btnQuickCheck.addEventListener('click', (e) => dispararVerificacao(e.currentTarget));
+  }
+  const btnOpenNotasRapidas = document.getElementById('btn-open-notas-rapidas');
+  if (btnOpenNotasRapidas) {
+    btnOpenNotasRapidas.addEventListener('click', abrirModalNotasRapidas);
+  }
   document.getElementById('btn-open-scrape-modal').addEventListener('click', () => {
     loadCasos();
     loadContas();
@@ -97,6 +122,13 @@ function setupEventListeners() {
     btnRefreshCasos.addEventListener('click', (e) => {
       e.preventDefault();
       atualizarCasosComFeedback(e.currentTarget);
+    });
+  }
+  const btnRefreshContas = document.getElementById('btn-refresh-contas');
+  if (btnRefreshContas) {
+    btnRefreshContas.addEventListener('click', (e) => {
+      e.preventDefault();
+      atualizarContasComFeedback(e.currentTarget);
     });
   }
   document.getElementById('btn-refresh-alvos').addEventListener('click', (e) => atualizarAlvosComFeedback(e.currentTarget));
@@ -163,9 +195,11 @@ async function refreshStats() {
     const elCasos = document.getElementById('stat-casos');
     const elCasosAtivos = document.getElementById('stat-casos-ativos');
     const badgeCasos = document.getElementById('badge-casos-count');
+    const badgeNotas = document.getElementById('badge-notas-count');
     if (elCasos) elCasos.innerText = data.total_casos || 0;
     if (elCasosAtivos) elCasosAtivos.innerText = `${data.casos_ativos || 0} em andamento`;
     if (badgeCasos) badgeCasos.innerText = data.total_casos || 0;
+    if (badgeNotas && typeof data.total_notas !== 'undefined') badgeNotas.innerText = data.total_notas || 0;
 
     document.getElementById('stat-contas').innerText = data.total_contas;
     document.getElementById('stat-contas-ativas').innerText = `${data.contas_ativas} ativa(s)`;
@@ -519,104 +553,97 @@ async function loadCasos() {
   }
 }
 
-async function atualizarCasosComFeedback(btnEl) {
-  const btn = (btnEl && btnEl.closest) ? (btnEl.closest('button') || btnEl) : (btnEl || document.getElementById('btn-refresh-casos'));
-  const origHtml = btn ? btn.innerHTML : '';
+async function executarBotaoComFeedback(btnEl, fallbackId, asyncFn, textoCarregando = 'Atualizando...', textoConcluido = 'Atualizado!') {
+  const rawEl = btnEl || (fallbackId ? document.getElementById(fallbackId) : null);
+  const btn = (rawEl && rawEl.closest) ? (rawEl.closest('button') || rawEl) : rawEl;
+
+  if (btn && btn.dataset.busy === '1') return;
+
   if (btn) {
+    if (!btn.dataset.origHtml) {
+      btn.dataset.origHtml = btn.innerHTML;
+    }
+    btn.dataset.busy = '1';
     btn.disabled = true;
-    btn.innerHTML = '<i data-lucide="loader-2" class="animate-spin"></i><span>Atualizando...</span>';
-    renderIcons();
+    btn.innerHTML = `<i data-lucide="loader-2" class="animate-spin"></i><span>${escapeHtml(textoCarregando)}</span>`;
+    renderIcons(btn);
   }
+
   try {
+    await asyncFn();
+    if (btn) {
+      btn.innerHTML = `<i data-lucide="check" class="text-gh-green"></i><span class="text-gh-green">${escapeHtml(textoConcluido)}</span>`;
+      renderIcons(btn);
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.dataset.busy = '0';
+        btn.innerHTML = btn.dataset.origHtml;
+        renderIcons(btn);
+      }, 900);
+    }
+  } catch (err) {
+    console.error('Erro na ação do botão:', err);
+    if (btn) {
+      btn.disabled = false;
+      btn.dataset.busy = '0';
+      btn.innerHTML = btn.dataset.origHtml;
+      renderIcons(btn);
+    }
+  }
+}
+
+async function atualizarCasosComFeedback(btnEl) {
+  await executarBotaoComFeedback(btnEl, 'btn-refresh-casos', async () => {
     await Promise.all([loadCasos(), loadAlvos(), refreshStats(), refreshLogs()]);
     if (activeDossieCasoId) {
       await abrirDossieCaso(activeDossieCasoId, true);
     }
-    if (btn) {
-      btn.innerHTML = '<i data-lucide="check" class="text-gh-green"></i><span class="text-gh-green">Atualizado!</span>';
-      renderIcons();
-      setTimeout(() => {
-        btn.disabled = false;
-        btn.innerHTML = origHtml || '<i data-lucide="refresh-cw"></i><span>Atualizar</span>';
-        renderIcons();
-      }, 1000);
-    }
-  } catch (err) {
-    console.error('Erro na atualização:', err);
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = origHtml;
-      renderIcons();
-    }
-  }
+  });
+}
+
+async function atualizarContasComFeedback(btnEl) {
+  await executarBotaoComFeedback(btnEl, 'btn-refresh-contas', async () => {
+    await Promise.all([loadContas(), refreshStats(), refreshLogs()]);
+  });
 }
 
 async function atualizarAlvosComFeedback(btnEl) {
-  const btn = (btnEl && btnEl.closest) ? (btnEl.closest('button') || btnEl) : (btnEl || document.getElementById('btn-refresh-alvos'));
-  const origHtml = btn ? btn.innerHTML : '';
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = '<i data-lucide="loader-2" class="animate-spin"></i><span>Atualizando...</span>';
-    renderIcons();
-  }
-  try {
-    await Promise.all([loadAlvos(), refreshStats(), refreshLogs()]);
-    if (btn) {
-      btn.innerHTML = '<i data-lucide="check" class="text-gh-green"></i><span class="text-gh-green">Atualizado!</span>';
-      renderIcons();
-      setTimeout(() => {
-        btn.disabled = false;
-        btn.innerHTML = origHtml || '<i data-lucide="refresh-cw"></i><span>Atualizar Lista</span>';
-        renderIcons();
-      }, 1000);
-    }
-  } catch (err) {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = origHtml;
-      renderIcons();
-    }
-  }
+  await executarBotaoComFeedback(btnEl, 'btn-refresh-alvos', async () => {
+    await Promise.all([loadAlvos(), loadDownloads(), refreshStats(), refreshLogs()]);
+  });
 }
 
 async function atualizarDownloadsComFeedback(btnEl) {
-  const btn = (btnEl && btnEl.closest) ? (btnEl.closest('button') || btnEl) : (btnEl || document.getElementById('btn-refresh-downloads'));
-  const origHtml = btn ? btn.innerHTML : '';
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = '<i data-lucide="loader-2" class="animate-spin"></i><span>Atualizando...</span>';
-    renderIcons();
-  }
-  try {
+  await executarBotaoComFeedback(btnEl, 'btn-refresh-downloads', async () => {
     await Promise.all([loadDownloads(), refreshStats(), refreshLogs()]);
-    if (btn) {
-      btn.innerHTML = '<i data-lucide="check" class="text-gh-green"></i><span class="text-gh-green">Atualizado!</span>';
-      renderIcons();
-      setTimeout(() => {
-        btn.disabled = false;
-        btn.innerHTML = origHtml || '<i data-lucide="refresh-cw"></i><span>Atualizar Mídias</span>';
-        renderIcons();
-      }, 1000);
-    }
-  } catch (err) {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = origHtml;
-      renderIcons();
-    }
-  }
+  });
+}
+
+async function atualizarSherlockComFeedback(btnEl) {
+  await executarBotaoComFeedback(btnEl, 'btn-refresh-sherlock', async () => {
+    await Promise.all([carregarHistoricoSherlock(), refreshStats(), refreshLogs()]);
+  });
+}
+
+async function atualizarNotasComFeedback(btnEl) {
+  await executarBotaoComFeedback(btnEl, 'btn-refresh-notas', async () => {
+    await Promise.all([carregarNotasOperacionais(), refreshStats()]);
+  });
 }
 
 window.atualizarCasosComFeedback = atualizarCasosComFeedback;
+window.atualizarContasComFeedback = atualizarContasComFeedback;
 window.atualizarAlvosComFeedback = atualizarAlvosComFeedback;
 window.atualizarDownloadsComFeedback = atualizarDownloadsComFeedback;
+window.atualizarSherlockComFeedback = atualizarSherlockComFeedback;
+window.atualizarNotasComFeedback = atualizarNotasComFeedback;
 
 function popularSeletoresCasos() {
   const opcoesForm = ['<option value="">Sem caso específico (Geral)</option>']
     .concat(cachedCasos.map(c => `<option value="${c.id}">${escapeHtml(c.nome)}${c.referencia ? ' (' + escapeHtml(c.referencia) + ')' : ''}</option>`))
     .join('');
 
-  ['select-caso-novo-alvo', 'select-caso-scrape'].forEach(id => {
+  ['select-caso-novo-alvo', 'select-caso-scrape', 'sherlock-select-caso', 'nota-select-caso'].forEach(id => {
     const el = document.getElementById(id);
     if (el) {
       const valAtual = el.value;
@@ -695,62 +722,113 @@ function renderizarGridCasos() {
   }
 
   grid.innerHTML = filtrados.map(c => {
-    const r = c.resumo || { total_alvos: 0, concluidos: 0, pendentes: 0 };
-    const st = c.status || 'EM_ANDAMENTO';
+    const r = c.resumo || { total_alvos: 0, concluidos: 0, pendentes: 0, baixados: 0 };
+    let st = c.status || 'EM_ANDAMENTO';
+    if (st !== 'ARQUIVADO' && r.total_alvos > 0 && r.pendentes === 0) {
+      st = 'CONCLUIDO';
+    }
     const isConcluido = st === 'CONCLUIDO';
     const badgeCls = isConcluido ? 'badge-green' : (st === 'EM_ANDAMENTO' ? 'badge-yellow' : 'badge-gray');
     const stLabel = isConcluido ? 'CONCLUÍDO' : (st === 'EM_ANDAMENTO' ? 'EM ANDAMENTO' : st);
-    const alvosPills = (c.alvos || []).slice(0, 6).map(u => `<span class="attempt-tag">@${escapeHtml(u)}</span>`).join('');
+    const pct = r.total_alvos > 0 ? Math.min(100, Math.round((r.concluidos / r.total_alvos) * 100)) : (isConcluido ? 100 : 0);
+
+    let dataFormatada = '';
+    if (c.criado_em) {
+      const partesData = String(c.criado_em).slice(0, 10).split('-');
+      dataFormatada = partesData.length === 3 ? `${partesData[2]}/${partesData[1]}/${partesData[0]}` : c.criado_em.slice(0, 10);
+    }
+
+    const detalhesMap = {};
+    (c.alvos_detalhes || []).forEach(ad => {
+      if (ad && ad.username) detalhesMap[String(ad.username).toLowerCase()] = ad;
+    });
+
+    const alvosPills = (c.alvos || []).slice(0, 6).map(u => {
+      const ad = detalhesMap[String(u).toLowerCase()] || {};
+      const jaBaixado = Boolean(ad.baixado || ad.status === 'CONCLUIDO');
+      const dotColor = jaBaixado ? 'bg-gh-green' : 'bg-gh-yellow';
+      const clickAct = jaBaixado ? `verDetalhesPerfil('${escapeHtml(u)}')` : `abrirDossieCaso(${c.id})`;
+      return `<button type="button" onclick="${clickAct}" class="attempt-tag inline-flex items-center gap-1.5 cursor-pointer hover:border-gh-blue transition" title="${jaBaixado ? 'Ver mídias e relatório de @' + escapeHtml(u) : 'Abrir dossiê do caso'}"><span class="w-1.5 h-1.5 rounded-full ${dotColor}"></span><span>@${escapeHtml(u)}</span></button>`;
+    }).join('');
     const extraCount = (c.alvos || []).length > 6 ? `<span class="attempt-tag">+${c.alvos.length - 6}</span>` : '';
 
     return `
-      <div class="bg-gh-card border border-gh-border rounded-lg p-4 flex flex-col justify-between gap-3 hover:border-gh-blue/50 transition">
-        <div class="space-y-2.5">
-          <div class="flex items-start justify-between gap-2">
-            <div>
-              <div class="flex items-center gap-2 flex-wrap">
-                <span class="text-xs font-mono text-gh-blue">#${c.id}</span>
-                <h4 class="text-sm font-semibold text-gh-title">${escapeHtml(c.nome)}</h4>
+      <div class="caso-card-modern bg-gh-card border border-gh-border rounded-xl p-5 flex flex-col justify-between gap-4 hover:border-gh-blue/60 transition shadow-sm ${isConcluido ? 'caso-card-concluido' : 'caso-card-andamento'}">
+        <div class="space-y-3.5">
+          <!-- Cabeçalho do Caso -->
+          <div class="flex items-start justify-between gap-2.5">
+            <div class="flex items-start gap-2.5 min-w-0">
+              <div class="w-10 h-10 rounded-lg ${isConcluido ? 'bg-gh-green/10 border-gh-green/30 text-gh-green' : 'bg-gh-blue/10 border-gh-blue/30 text-gh-blue'} border flex items-center justify-center shrink-0 mt-0.5">
+                <i data-lucide="${isConcluido ? 'folder-check' : 'briefcase'}" style="width:19px;height:19px;"></i>
               </div>
-              ${c.referencia ? `<div class="text-[11px] text-gh-muted mt-0.5 flex items-center gap-1"><i data-lucide="bookmark" style="width:11px;height:11px;"></i><span>${escapeHtml(c.referencia)}</span></div>` : ''}
+              <div class="min-w-0">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="text-xs font-mono font-bold text-gh-blue bg-gh-blue/10 border border-gh-blue/30 px-1.5 py-0.5 rounded">#${c.id}</span>
+                  <h4 class="text-base font-bold text-gh-title truncate">${escapeHtml(c.nome)}</h4>
+                </div>
+                <div class="flex items-center gap-2.5 flex-wrap mt-1 text-xs text-gh-muted">
+                  ${c.referencia ? `<span class="inline-flex items-center gap-1 text-gh-text"><i data-lucide="bookmark" class="text-gh-blue" style="width:12px;height:12px;"></i><span>${escapeHtml(c.referencia)}</span></span>` : ''}
+                  ${dataFormatada ? `<span class="inline-flex items-center gap-1 font-mono text-[11.5px]"><i data-lucide="calendar" style="width:11.5px;height:11.5px;"></i><span>${escapeHtml(dataFormatada)}</span></span>` : ''}
+                </div>
+              </div>
             </div>
-            <button type="button" class="badge ${badgeCls} inline-flex items-center gap-1 cursor-pointer hover:opacity-80 transition bg-transparent border-0" onclick="alternarStatusCaso(${c.id}, '${st}')" title="Clique para alternar status (Em Andamento / Concluído)">
-              <i data-lucide="${isConcluido ? 'check-circle-2' : 'clock'}" style="width:11px;height:11px;"></i>
+            <button type="button" class="badge ${badgeCls} inline-flex items-center gap-1 cursor-pointer hover:opacity-80 transition shrink-0" onclick="alternarStatusCaso(${c.id}, '${st}')" title="Clique para alternar status (Em Andamento / Concluído)">
+              <i data-lucide="${isConcluido ? 'check-circle-2' : 'clock'}" style="width:12px;height:12px;"></i>
               <span>${escapeHtml(stLabel)}</span>
             </button>
           </div>
 
-          <p class="text-xs text-gh-muted line-clamp-2 min-h-[32px]">${escapeHtml(c.descricao || 'Sem observações registradas.')}</p>
+          <!-- Observações / Descrição do Caso -->
+          <div class="bg-gh-bg/70 border border-gh-border/80 rounded-lg px-3 py-2 text-xs text-gh-text line-clamp-2 min-h-[38px] flex items-center">
+            <span>${escapeHtml(c.descricao || 'Nenhuma observação operacional registrada neste dossiê.')}</span>
+          </div>
 
-          <div class="grid grid-cols-3 gap-1.5 text-[11px]">
-            <div class="bg-gh-bg border border-gh-border rounded px-2.5 py-1.5">
-              <span class="text-gh-muted block">Investigados</span>
-              <strong class="text-gh-title font-mono text-xs">${r.total_alvos}</strong>
+          <!-- Barra de Progresso do Dossiê -->
+          <div class="space-y-1">
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-gh-muted font-medium">Progresso da Extração</span>
+              <strong class="font-mono ${isConcluido ? 'text-gh-green' : 'text-gh-blue'}">${r.concluidos}/${r.total_alvos} concluído(s) (${pct}%)</strong>
             </div>
-            <div class="bg-gh-bg border border-gh-border rounded px-2.5 py-1.5">
-              <span class="text-gh-muted block">Extraídos</span>
-              <strong class="text-gh-green font-mono text-xs">${r.concluidos}</strong>
-            </div>
-            <div class="bg-gh-bg border border-gh-border rounded px-2.5 py-1.5">
-              <span class="text-gh-muted block">Pendentes</span>
-              <strong class="text-gh-yellow font-mono text-xs">${r.pendentes}</strong>
+            <div class="w-full bg-gh-bg border border-gh-border rounded-full h-2 overflow-hidden">
+              <div class="${isConcluido ? 'bg-gh-green' : 'bg-gh-blue'} h-full transition-all duration-300" style="width:${pct}%;"></div>
             </div>
           </div>
 
-          <div class="attempt-list pt-0.5">
-            ${alvosPills || '<span class="text-[11px] text-gh-muted">Nenhuma @conta vinculada ainda</span>'}
-            ${extraCount}
+          <!-- KPIs do Caso -->
+          <div class="grid grid-cols-3 gap-2 text-xs">
+            <div class="bg-gh-bg border border-gh-border rounded-lg px-3 py-2">
+              <span class="text-gh-muted flex items-center gap-1 text-[11.5px]"><i data-lucide="users" style="width:12px;height:12px;"></i>Alvos</span>
+              <strong class="text-gh-title font-mono text-base block mt-0.5">${r.total_alvos}</strong>
+            </div>
+            <div class="bg-gh-bg border border-gh-border rounded-lg px-3 py-2">
+              <span class="text-gh-muted flex items-center gap-1 text-[11.5px]"><i data-lucide="check-circle-2" class="text-gh-green" style="width:12px;height:12px;"></i>Extraídos</span>
+              <strong class="text-gh-green font-mono text-base block mt-0.5">${r.concluidos}</strong>
+            </div>
+            <div class="bg-gh-bg border border-gh-border rounded-lg px-3 py-2">
+              <span class="text-gh-muted flex items-center gap-1 text-[11.5px]"><i data-lucide="clock" class="text-gh-yellow" style="width:12px;height:12px;"></i>Pendentes</span>
+              <strong class="text-gh-yellow font-mono text-base block mt-0.5">${r.pendentes}</strong>
+            </div>
+          </div>
+
+          <!-- Lista de @Alvos Vinculados -->
+          <div class="space-y-1">
+            <span class="text-[11px] font-semibold uppercase tracking-wider text-gh-muted block">Contas Vinculadas ao Caso:</span>
+            <div class="attempt-list">
+              ${alvosPills || '<span class="text-xs text-gh-muted italic">Nenhuma @conta vinculada ainda</span>'}
+              ${extraCount}
+            </div>
           </div>
         </div>
 
-        <div class="flex items-center justify-between gap-1.5 pt-2.5 border-t border-gh-border">
+        <!-- Rodapé de Ações -->
+        <div class="flex items-center justify-between gap-2 pt-3 border-t border-gh-border">
           <button class="btn-primary-sm" onclick="abrirDossieCaso(${c.id})">
             <i data-lucide="folder-open"></i>
             <span>Abrir Dossiê</span>
           </button>
-          <div class="flex items-center gap-1">
-            <a href="/api/casos/${c.id}/zip" class="btn-secondary-sm" style="text-decoration:none;" title="Baixar ZIP consolidado de todo este Caso">
-              <i data-lucide="download"></i>
+          <div class="flex items-center gap-1.5">
+            <a href="/api/casos/${c.id}/zip" class="btn-secondary-sm" style="text-decoration:none;" title="Baixar pacote ZIP consolidado de todo este Caso">
+              <i data-lucide="download" class="text-gh-green"></i>
               <span>ZIP</span>
             </a>
             <button class="btn-secondary-sm" onclick="editarCaso(${c.id})" title="Editar informações do Caso">
@@ -933,7 +1011,7 @@ async function abrirDossieCaso(casoId, silencioso = false) {
 
     return `
       <tr>
-        <td><strong>@${escapeHtml(a.username)}</strong></td>
+        <td><strong class="font-mono text-gh-title">@${escapeHtml(a.username)}</strong></td>
         <td>${a.conta_atual ? '@' + escapeHtml(a.conta_atual) : '<span class="text-muted">-</span>'}</td>
         <td><span class="badge ${bCls}">${escapeHtml(a.status || 'VINCULADO')}</span></td>
         <td>${a.baixado ? '<span class="badge badge-green"><i data-lucide="check-circle-2"></i><span>Coletado</span></span>' : '<span class="text-muted text-xs">Pendente</span>'}</td>
@@ -941,7 +1019,8 @@ async function abrirDossieCaso(casoId, silencioso = false) {
           <div class="inline-flex items-center gap-1.5 flex-wrap">
             ${a.baixado ? `<button class="btn-secondary-sm" onclick="verDetalhesPerfil('${escapeHtml(a.username)}')"><i data-lucide="layout-grid" class="text-gh-blue"></i><span>Relatório</span></button>` : ''}
             ${a.baixado ? `<a href="/api/downloads/${encodeURIComponent(a.username)}/csv" class="btn-secondary-sm" style="text-decoration:none;"><i data-lucide="file-spreadsheet" class="text-gh-green"></i><span>CSV</span></a>` : ''}
-            <button class="btn-secondary-sm" onclick="baixarDireto('${escapeHtml(a.username)}', '${escapeHtml(a.conta_atual || '')}', 6, ${c.id})" title="Extrair perfil agora"><i data-lucide="zap" class="text-gh-yellow"></i><span>Extrair</span></button>
+            <button class="btn-secondary-sm" onclick="baixarDireto('${escapeHtml(a.username)}', '${escapeHtml(a.conta_atual || '')}', 6, ${c.id}, 'go', this)" title="Extrair perfil agora"><i data-lucide="zap" class="text-gh-yellow"></i><span>Extrair</span></button>
+            <button class="btn-secondary-sm" onclick="fecharModal('modal-dossie-caso'); investigarNoSherlock('${escapeHtml(a.username)}', '${c.id}')" title="Sondar este alvo em 480+ redes sociais"><i data-lucide="scan-search" class="text-gh-blue"></i><span>Sherlock</span></button>
             <button class="btn-secondary-sm" onclick="vincularAlvoCaso('${escapeHtml(a.username)}', null)" title="Remover vínculo deste caso" style="color:var(--danger);"><i data-lucide="unlink"></i></button>
           </div>
         </td>
@@ -1067,6 +1146,7 @@ async function loadAlvos() {
   try {
     const res = await fetch('/api/alvos');
     const todosAlvos = await res.json();
+    cachedAlvos = Array.isArray(todosAlvos) ? todosAlvos : [];
 
     const tbody = document.getElementById('alvos-tbody');
     const dashTbody = document.getElementById('dash-alvos-tbody');
@@ -1135,15 +1215,19 @@ async function loadAlvos() {
           <td>${histHtml}</td>
           <td>
             <div class="inline-flex items-center gap-1.5 whitespace-nowrap">
-              <button class="btn-secondary-sm" onclick="baixarDireto('${escapeHtml(a.username)}', '${escapeHtml(a.conta_atual || '')}')" title="Extrair fotos, stories e conexões agora">
+              <button type="button" class="btn-secondary-sm" onclick="baixarDireto('${escapeHtml(a.username)}', '${escapeHtml(a.conta_atual || '')}', 6, null, 'go', this)" title="Extrair fotos, stories e conexões agora">
                 <i data-lucide="zap" class="text-gh-yellow"></i>
                 <span>Extrair</span>
               </button>
-              <a href="/api/downloads/${encodeURIComponent(a.username)}/zip" class="btn-secondary-sm" style="text-decoration:none;" title="Baixar pacote ZIP">
+              <button type="button" class="btn-secondary-sm" onclick="investigarNoSherlock('${escapeHtml(a.username)}', '${a.caso_id || ''}')" title="Investigar este alvo em 480+ redes sociais (Sherlock OSINT)">
+                <i data-lucide="scan-search" class="text-gh-blue"></i>
+                <span>Sherlock</span>
+              </button>
+              <button type="button" class="btn-secondary-sm" onclick="baixarZipAlvoSeguro('${escapeHtml(a.username)}')" title="Baixar pacote ZIP">
                 <i data-lucide="archive"></i>
                 <span>ZIP</span>
-              </a>
-              <button class="btn-secondary-sm" onclick="removerAlvo('${escapeHtml(a.username)}')" title="Excluir alvo" style="color:var(--danger);">
+              </button>
+              <button type="button" class="btn-secondary-sm" onclick="removerAlvo('${escapeHtml(a.username)}')" title="Excluir alvo" style="color:var(--danger);">
                 <i data-lucide="trash-2"></i>
               </button>
             </div>
@@ -1153,6 +1237,17 @@ async function loadAlvos() {
     }).join('');
 
     if (tbody) tbody.innerHTML = rows;
+
+    const selSherlockAlvos = document.getElementById('sherlock-select-atalho-alvos');
+    if (selSherlockAlvos) {
+      const valAtual = selSherlockAlvos.value;
+      const opts = ['<option value="">Puxar dos Alvos...</option>']
+        .concat(todosAlvos.map(a => `<option value="${escapeHtml(a.username)}">@${escapeHtml(a.username)}</option>`))
+        .join('');
+      selSherlockAlvos.innerHTML = opts;
+      if (valAtual) selSherlockAlvos.value = valAtual;
+    }
+
     atualizarContadorSelecao();
     renderIcons();
   } catch (err) {
@@ -1280,10 +1375,15 @@ async function salvarNovosAlvos() {
 }
 
 /* AÇÕES E EXTRAÇÃO */
-async function dispararVerificacao() {
-  await fetch('/api/acoes/verificar_cascata', { method: 'POST' });
-  refreshStats();
-  refreshLogs();
+async function dispararVerificacao(btnEl) {
+  await executarBotaoComFeedback(btnEl, 'btn-quick-check', async () => {
+    const res = await fetch('/api/acoes/verificar_cascata', { method: 'POST' });
+    const data = await res.json();
+    if (!data.sucesso && data.erro) {
+      alert(data.erro);
+    }
+    await Promise.all([refreshStats(), refreshLogs()]);
+  }, 'Verificando...', 'Disparado!');
 }
 
 async function confirmarScrapeDireto() {
@@ -1305,26 +1405,73 @@ async function confirmarScrapeDireto() {
   input.value = '';
 }
 
-async function baixarDireto(username, contaUser = '', maxScrolls = 6, casoId = null, engine = 'go') {
-  const res = await fetch('/api/acoes/baixar_direto', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      username: username,
-      conta_user: contaUser,
-      max_scrolls: maxScrolls,
-      caso_id: casoId || null,
-      engine: engine
-    })
-  });
-  const data = await res.json();
-  if (!data.sucesso) {
-    alert('Erro: ' + (data.erro || 'Não foi possível iniciar a extração.'));
+async function baixarDireto(username, contaUser = '', maxScrolls = 6, casoId = null, engine = 'go', btnEl = null) {
+  const btn = (btnEl && btnEl.closest) ? (btnEl.closest('button') || btnEl) : btnEl;
+  if (btn && btn.dataset.busy === '1') return;
+
+  if (btn) {
+    if (!btn.dataset.origHtml) btn.dataset.origHtml = btn.innerHTML;
+    btn.dataset.busy = '1';
+    btn.disabled = true;
+    btn.innerHTML = '<i data-lucide="loader-2" class="animate-spin"></i><span>Iniciando...</span>';
+    renderIcons(btn);
   }
-  loadCasos();
-  refreshStats();
-  refreshLogs();
+
+  try {
+    const res = await fetch('/api/acoes/baixar_direto', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: username,
+        conta_user: contaUser,
+        max_scrolls: maxScrolls,
+        caso_id: casoId || null,
+        engine: engine
+      })
+    });
+    const data = await res.json();
+    if (!data.sucesso) {
+      alert('Aviso: ' + (data.erro || 'Não foi possível iniciar a extração.'));
+    } else if (btn) {
+      btn.innerHTML = '<i data-lucide="check" class="text-gh-green"></i><span class="text-gh-green">Em fila!</span>';
+      renderIcons(btn);
+    }
+  } catch (err) {
+    alert('Erro de conexão ao solicitar extração: ' + err);
+  } finally {
+    if (btn) {
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.dataset.busy = '0';
+        btn.innerHTML = btn.dataset.origHtml;
+        renderIcons(btn);
+      }, 1200);
+    }
+    loadCasos();
+    refreshStats();
+    refreshLogs();
+  }
 }
+
+async function baixarZipAlvoSeguro(username) {
+  const clean = String(username || '').replace('@', '').trim();
+  if (!clean) return;
+  if (cachedDownloadsSet.has(clean.toLowerCase())) {
+    window.location.href = `/api/downloads/${encodeURIComponent(clean)}/zip`;
+    return;
+  }
+  try {
+    const res = await fetch(`/api/downloads/${encodeURIComponent(clean)}/detalhes`);
+    if (res.ok) {
+      window.location.href = `/api/downloads/${encodeURIComponent(clean)}/zip`;
+    } else {
+      alert(`Ainda não há mídias extraídas para @${clean}.\nSe o perfil for privado, aguarde o aceite da solicitação ou clique em "Extrair" quando estiver liberado.`);
+    }
+  } catch (err) {
+    alert('Erro ao verificar pacote ZIP do alvo.');
+  }
+}
+window.baixarZipAlvoSeguro = baixarZipAlvoSeguro;
 
 async function toggleSentinela() {
   const dot = document.getElementById('sentinela-dot');
@@ -1360,6 +1507,7 @@ async function loadDownloads() {
   try {
     const res = await fetch('/api/downloads');
     const todosPerfis = await res.json();
+    cachedDownloadsSet = new Set((todosPerfis || []).map(p => String(p.username || '').toLowerCase()));
     const grid = document.getElementById('downloads-grid');
     const filtroEl = document.getElementById('select-filtro-caso-downloads');
     const filtroCaso = filtroEl ? filtroEl.value : 'TODOS';
@@ -1371,7 +1519,16 @@ async function loadDownloads() {
     });
 
     if (!perfis.length) {
-      grid.innerHTML = '<p class="text-center" style="grid-column: 1/-1;">Nenhum perfil baixado para este filtro.</p>';
+      grid.innerHTML = `
+        <div class="col-span-full bg-gh-bg border border-gh-border rounded-xl p-8 text-center space-y-2" style="grid-column: 1/-1;">
+          <div class="w-11 h-11 rounded-full bg-gh-blue/10 border border-gh-blue/30 flex items-center justify-center text-gh-blue mx-auto">
+            <i data-lucide="folder-down" style="width:20px;height:20px;"></i>
+          </div>
+          <div class="text-sm font-semibold text-gh-title">Nenhum perfil extraído para este filtro</div>
+          <p class="text-xs text-gh-muted">Use o botão "Baixar Perfil Agora" no topo para extrair fotos, stories, destaques e conexões completas.</p>
+        </div>
+      `;
+      renderIcons();
       return;
     }
 
@@ -1386,72 +1543,93 @@ async function loadDownloads() {
       const destaques = d.total_destaques_baixados || 0;
       const stories = d.total_stories_baixados || 0;
 
+      const rawPosts = (c.posts && c.posts !== 'N/A') ? c.posts : `${fotosFeed} ${fotosFeed === 1 ? 'post' : 'posts'}`;
+      const rawSeg = (c.seguidores && c.seguidores !== 'N/A') ? c.seguidores : `${segExtr} seguidores`;
+
+      const engRaw = String(d.engine_utilizada || '');
+      const isGoEng = engRaw.includes('GO');
+      const engLabel = engRaw === 'HYBRID_GO_PLAYWRIGHT' ? 'Híbrido Go+Web' : (isGoEng ? 'Go Turbo REST' : 'Playwright');
+
+      const avatarHtml = p.avatar_url
+        ? `<img src="${encodeURI(p.avatar_url)}" alt="@${escapeHtml(p.username)}" class="w-11 h-11 rounded-full object-cover border-2 border-gh-green/70 shrink-0 cursor-pointer" onclick="verDetalhesPerfil('${escapeHtml(p.username)}')" title="Clique para abrir galeria de @${escapeHtml(p.username)}">`
+        : `<div class="w-11 h-11 rounded-full bg-gh-blue/15 border-2 border-gh-blue/40 flex items-center justify-center text-gh-blue shrink-0 cursor-pointer" onclick="verDetalhesPerfil('${escapeHtml(p.username)}')"><i data-lucide="user" style="width:18px;height:18px;"></i></div>`;
+
       return `
-        <div class="bg-gh-card border border-gh-border rounded-lg p-4 flex flex-col justify-between gap-3 hover:border-gh-blue/40 transition">
-          <div>
-            <div class="flex items-center justify-between border-b border-gh-border pb-2.5 mb-2.5">
-              <div class="flex items-center gap-2">
-                <div class="w-7 h-7 rounded-full bg-gh-blue/10 border border-gh-blue/30 flex items-center justify-center text-gh-blue">
-                  <i data-lucide="user" style="width:14px;height:14px;"></i>
-                </div>
-                <div>
-                  <div class="text-sm font-semibold text-gh-title">@${escapeHtml(p.username)}</div>
-                  <div class="text-[11px] text-gh-muted">${escapeHtml(c.posts || '0 posts')} • ${escapeHtml(c.seguidores || '0 seg.')}</div>
+        <div class="download-card-modern bg-gh-card border border-gh-border rounded-xl p-4 flex flex-col justify-between gap-3.5 hover:border-gh-blue/50 transition shadow-sm">
+          <div class="space-y-3">
+            <!-- Cabeçalho com Avatar Real e Contadores -->
+            <div class="flex items-start justify-between gap-2 border-b border-gh-border pb-3">
+              <div class="flex items-center gap-3 min-w-0">
+                ${avatarHtml}
+                <div class="min-w-0">
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <strong class="text-base font-bold text-gh-title truncate cursor-pointer hover:text-gh-blue transition" onclick="verDetalhesPerfil('${escapeHtml(p.username)}')">@${escapeHtml(p.username)}</strong>
+                    <span class="badge ${isGoEng ? 'badge-blue' : 'badge-gray'} text-[10.5px] py-0 px-1.5">${escapeHtml(engLabel)}</span>
+                  </div>
+                  <div class="text-xs text-gh-muted mt-0.5 truncate">${escapeHtml(rawPosts)} • ${escapeHtml(rawSeg)}</div>
+                  ${p.extraido_em ? `<div class="text-[11px] font-mono text-gh-muted mt-0.5 flex items-center gap-1"><i data-lucide="calendar-clock" style="width:11px;height:11px;"></i><span>${escapeHtml(p.extraido_em)}</span></div>` : ''}
                 </div>
               </div>
-              <button class="btn-secondary-sm" onclick="removerDownload('${escapeHtml(p.username)}')" title="Excluir mídias deste perfil" style="color:var(--danger);">
+              <button class="btn-secondary-sm shrink-0" onclick="removerDownload('${escapeHtml(p.username)}')" title="Excluir pasta de mídias deste perfil" style="color:var(--danger);">
                 <i data-lucide="trash-2"></i>
               </button>
             </div>
 
-            <div class="flex items-center justify-between gap-2 mb-2">
-              <span class="text-[11px] text-gh-muted flex items-center gap-1"><i data-lucide="briefcase" style="width:11px;height:11px;"></i>Caso:</span>
+            <!-- Seletor de Vínculo com Caso -->
+            <div class="flex items-center justify-between gap-2 bg-gh-bg/70 border border-gh-border/80 rounded-lg px-3 py-1.5">
+              <span class="text-xs text-gh-muted flex items-center gap-1.5 font-medium"><i data-lucide="briefcase" class="text-gh-blue" style="width:12px;height:12px;"></i>Caso / Dossiê:</span>
               ${gerarSelectInlineCaso(p.username, p.caso_id)}
             </div>
 
-            <div class="grid grid-cols-3 gap-1.5 text-[11px] mb-2">
-              <div class="bg-gh-bg border border-gh-border rounded px-2 py-1.5">
-                <span class="text-gh-muted flex items-center gap-1"><i data-lucide="image" style="width:11px;height:11px;"></i>Feed</span>
-                <strong class="text-gh-title font-mono text-xs">${fotosFeed}</strong>
+            <!-- Contadores de Mídias Visuais -->
+            <div class="grid grid-cols-3 gap-2 text-xs">
+              <div class="bg-gh-bg border border-gh-border rounded-lg px-2.5 py-2 text-center">
+                <span class="text-gh-muted flex items-center justify-center gap-1 text-[11px]"><i data-lucide="image" class="text-gh-blue" style="width:11.5px;height:11.5px;"></i>Feed</span>
+                <strong class="text-gh-title font-mono text-sm block mt-0.5">${fotosFeed}</strong>
               </div>
-              <div class="bg-gh-bg border border-gh-border rounded px-2 py-1.5">
-                <span class="text-gh-muted flex items-center gap-1"><i data-lucide="sparkles" style="width:11px;height:11px;"></i>Destaq.</span>
-                <strong class="text-gh-title font-mono text-xs">${destaques}</strong>
+              <div class="bg-gh-bg border border-gh-border rounded-lg px-2.5 py-2 text-center">
+                <span class="text-gh-muted flex items-center justify-center gap-1 text-[11px]"><i data-lucide="sparkles" class="text-gh-yellow" style="width:11.5px;height:11.5px;"></i>Destaques</span>
+                <strong class="text-gh-title font-mono text-sm block mt-0.5">${destaques}</strong>
               </div>
-              <div class="bg-gh-bg border border-gh-border rounded px-2 py-1.5">
-                <span class="text-gh-muted flex items-center gap-1"><i data-lucide="clock" style="width:11px;height:11px;"></i>Stories</span>
-                <strong class="text-gh-title font-mono text-xs">${stories}</strong>
+              <div class="bg-gh-bg border border-gh-border rounded-lg px-2.5 py-2 text-center">
+                <span class="text-gh-muted flex items-center justify-center gap-1 text-[11px]"><i data-lucide="flame" class="text-gh-green" style="width:11.5px;height:11.5px;"></i>Stories</span>
+                <strong class="text-gh-title font-mono text-sm block mt-0.5">${stories}</strong>
               </div>
             </div>
 
-            <div class="text-[11.5px] text-gh-muted space-y-1 bg-gh-bg/60 border border-gh-border/60 rounded p-2">
+            <!-- Painel de Conexões & Mútuos -->
+            <div class="text-xs text-gh-muted space-y-1.5 bg-gh-bg border border-gh-border rounded-lg p-3">
               <div class="flex items-center justify-between">
-                <span class="flex items-center gap-1.5"><i data-lucide="users" style="width:12px;height:12px;"></i>Conexões:</span>
-                <span class="text-gh-text font-mono">${segExtr} seg. | ${segndoExtr} segndo</span>
+                <span class="flex items-center gap-1.5"><i data-lucide="users" class="text-gh-blue" style="width:13px;height:13px;"></i>Conexões Extraídas:</span>
+                <span class="text-gh-title font-mono font-semibold">${segExtr} seg. | ${segndoExtr} segndo</span>
               </div>
               <div class="flex items-center justify-between">
-                <span class="flex items-center gap-1.5"><i data-lucide="repeat" class="text-gh-green" style="width:12px;height:12px;"></i>Mútuos:</span>
-                <strong class="text-gh-green font-mono">${mutuos} em comum</strong>
+                <span class="flex items-center gap-1.5"><i data-lucide="repeat" class="text-gh-green" style="width:13px;height:13px;"></i>Amigos Mútuos:</span>
+                <span class="badge badge-green font-mono text-[11px] py-0 px-2">${mutuos} em comum</span>
               </div>
-              <div class="flex items-center justify-between">
-                <span class="flex items-center gap-1.5"><i data-lucide="folder" style="width:12px;height:12px;"></i>Arquivos:</span>
-                <span class="text-gh-text font-mono">${p.total_arquivos} itens</span>
+              <div class="flex items-center justify-between pt-1 border-t border-gh-border/60">
+                <span class="flex items-center gap-1.5"><i data-lucide="hard-drive" style="width:13px;height:13px;"></i>Total na Pasta:</span>
+                <span class="text-gh-text font-mono">${p.total_arquivos} arquivo(s)</span>
               </div>
             </div>
           </div>
 
-          <div class="flex items-center justify-between gap-1.5 pt-1">
-            <div class="flex items-center gap-1.5">
-              <button class="btn-secondary-sm" onclick="verDetalhesPerfil('${escapeHtml(p.username)}')">
+          <!-- Barra de Ações do Card -->
+          <div class="flex items-center justify-between gap-1.5 pt-2 border-t border-gh-border">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <button class="btn-secondary-sm" onclick="verDetalhesPerfil('${escapeHtml(p.username)}')" title="Abrir Galeria Visual, Biografia e Listas">
                 <i data-lucide="layout-grid" class="text-gh-blue"></i>
-                <span>Relatório</span>
+                <span>Galeria & Bio</span>
               </button>
               <a href="/api/downloads/${encodeURIComponent(p.username)}/csv" class="btn-secondary-sm" style="text-decoration:none;" title="Exportar conexões em planilha CSV para Excel">
                 <i data-lucide="file-spreadsheet" class="text-gh-green"></i>
                 <span>CSV</span>
               </a>
+              <button class="btn-secondary-sm" onclick="investigarNoSherlock('${escapeHtml(p.username)}', '${p.caso_id || ''}')" title="Investigar este @username em 480+ redes sociais">
+                <i data-lucide="scan-search" class="text-gh-blue"></i>
+              </button>
             </div>
-            <a href="/api/downloads/${encodeURIComponent(p.username)}/zip" class="btn-primary-sm" style="text-decoration:none;">
+            <a href="/api/downloads/${encodeURIComponent(p.username)}/zip" class="btn-primary-sm" style="text-decoration:none;" title="Baixar pacote completo .ZIP">
               <i data-lucide="download"></i>
               <span>ZIP</span>
             </a>
@@ -1724,7 +1902,7 @@ function alternarSecaoManual(secao, btnEl) {
     btnEl.parentElement.querySelectorAll('.filter-chip').forEach(b => b.classList.remove('active'));
     btnEl.classList.add('active');
   }
-  const ids = ['trilha', 'casos', 'golang', 'status', 'faq'];
+  const ids = ['trilha', 'casos', 'golang', 'sherlock', 'status', 'faq'];
   ids.forEach(id => {
     const el = document.getElementById(`manual-sec-${id}`);
     if (el) {
@@ -1812,3 +1990,804 @@ function escapeHtml(text) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
+
+/* ==============================================================================
+   MÓDULO SHERLOCK OSINT (INVESTIGAÇÃO MULTI-REDES E PLATAFORMAS)
+   ============================================================================== */
+
+let activeSherlockScanId = null;
+let sherlockPollingInterval = null;
+let activeSherlockResults = [];
+
+function selecionarAlvoAtalhoSherlock(val) {
+  if (!val) return;
+  const input = document.getElementById('sherlock-input-username');
+  if (input) input.value = val.replace('@', '').trim();
+  const alvoObj = cachedAlvos.find(a => a.username.toLowerCase() === val.toLowerCase());
+  if (alvoObj && alvoObj.caso_id) {
+    const selCaso = document.getElementById('sherlock-select-caso');
+    if (selCaso) selCaso.value = alvoObj.caso_id;
+  }
+}
+
+function investigarNoSherlock(username, casoId = '') {
+  switchTab('tab-sherlock');
+  const input = document.getElementById('sherlock-input-username');
+  if (input) input.value = username.replace('@', '').trim();
+  if (casoId) {
+    const selCaso = document.getElementById('sherlock-select-caso');
+    if (selCaso) selCaso.value = casoId;
+  }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  setTimeout(() => {
+    iniciarVarreduraSherlock();
+  }, 250);
+}
+
+async function iniciarVarreduraSherlock() {
+  const inputUser = document.getElementById('sherlock-input-username');
+  const username = inputUser ? inputUser.value.trim().replace('@', '') : '';
+  if (!username) {
+    alert('Por favor, informe o @username que deseja investigar.');
+    if (inputUser) inputUser.focus();
+    return;
+  }
+
+  const modo = document.getElementById('sherlock-select-modo').value;
+  const selCaso = document.getElementById('sherlock-select-caso');
+  const casoId = selCaso ? selCaso.value : null;
+  const incluirNsfw = document.getElementById('sherlock-chk-nsfw').checked;
+
+  const btnIniciar = document.getElementById('btn-iniciar-sherlock');
+  const btnCancelar = document.getElementById('btn-cancelar-sherlock');
+  const boxProgresso = document.getElementById('sherlock-box-progresso');
+  const boxResultados = document.getElementById('sherlock-box-resultados');
+
+  if (btnIniciar) btnIniciar.disabled = true;
+  if (btnCancelar) btnCancelar.style.display = 'inline-flex';
+  if (boxProgresso) boxProgresso.style.display = 'block';
+  if (boxResultados) boxResultados.style.display = 'none';
+
+  document.getElementById('sherlock-lbl-alvo').innerText = `@${username}`;
+  const lblTitulo = document.getElementById('sherlock-lbl-titulo-progresso');
+  if (lblTitulo) lblTitulo.innerText = 'Sondando Redes Sociais para:';
+  const iconBox = document.getElementById('sherlock-progresso-icon-box');
+  if (iconBox) {
+    iconBox.className = 'w-9 h-9 rounded-full bg-gh-blue/15 border border-gh-blue/40 flex items-center justify-center text-gh-blue';
+    iconBox.innerHTML = '<i data-lucide="loader-2" class="animate-spin" style="width:17px;height:17px;"></i>';
+  }
+  document.getElementById('sherlock-lbl-status').innerText = 'Disparando sondas simultâneas em segundo plano...';
+  const badgeProg = document.getElementById('sherlock-badge-progresso');
+  if (badgeProg) {
+    badgeProg.className = 'badge badge-blue font-mono';
+    badgeProg.innerText = '0%';
+  }
+  const progFill = document.getElementById('sherlock-prog-bar-fill');
+  if (progFill) {
+    progFill.className = 'bg-gh-blue h-full transition-all duration-300';
+    progFill.style.width = '0%';
+  }
+  document.getElementById('sherlock-kpi-processados').innerText = '0 / 0';
+  document.getElementById('sherlock-kpi-encontrados').innerText = '0';
+  document.getElementById('sherlock-kpi-tempo').innerText = '0.0s';
+
+  renderIcons();
+
+  try {
+    const res = await fetch('/api/sherlock/iniciar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: username,
+        modo: modo,
+        incluir_nsfw: incluirNsfw,
+        caso_id: casoId
+      })
+    });
+    const data = await res.json();
+    if (!data.sucesso) {
+      alert(data.erro || 'Erro ao iniciar varredura.');
+      if (btnIniciar) btnIniciar.disabled = false;
+      if (btnCancelar) btnCancelar.style.display = 'none';
+      if (boxProgresso) boxProgresso.style.display = 'none';
+      return;
+    }
+
+    activeSherlockScanId = data.scan_id;
+
+    if (sherlockPollingInterval) clearInterval(sherlockPollingInterval);
+    sherlockPollingInterval = setInterval(() => checarStatusSherlock(activeSherlockScanId), 700);
+  } catch (err) {
+    console.error('Erro na requisição do Sherlock:', err);
+    if (btnIniciar) btnIniciar.disabled = false;
+    if (btnCancelar) btnCancelar.style.display = 'none';
+  }
+}
+
+async function checarStatusSherlock(scanId) {
+  try {
+    const res = await fetch(`/api/sherlock/status/${scanId}`);
+    const data = await res.json();
+    if (!data.sucesso || !data.scan) return;
+
+    const s = data.scan;
+    const total = s.total || 1;
+    const processados = s.processados || 0;
+    const pct = Math.min(100, Math.round((processados / total) * 100));
+
+    const progFill = document.getElementById('sherlock-prog-bar-fill');
+    if (progFill) progFill.style.width = `${pct}%`;
+    const badgeProg = document.getElementById('sherlock-badge-progresso');
+    if (badgeProg) badgeProg.innerText = `${pct}%`;
+    const kpiProc = document.getElementById('sherlock-kpi-processados');
+    if (kpiProc) kpiProc.innerText = `${processados} / ${total}`;
+    const kpiEnc = document.getElementById('sherlock-kpi-encontrados');
+    if (kpiEnc) kpiEnc.innerText = (s.encontrados || []).length;
+    const kpiTempo = document.getElementById('sherlock-kpi-tempo');
+    if (kpiTempo) kpiTempo.innerText = `${s.tempo_decorrido_s || 0}s`;
+
+    activeSherlockResults = s.encontrados || [];
+
+    if (activeSherlockResults.length > 0) {
+      const boxResultados = document.getElementById('sherlock-box-resultados');
+      if (boxResultados) boxResultados.style.display = 'block';
+      renderizarCardsResultadosSherlock(activeSherlockResults);
+    }
+
+    if (s.status === 'CONCLUIDO' || s.status === 'CANCELADO') {
+      clearInterval(sherlockPollingInterval);
+      sherlockPollingInterval = null;
+
+      const btnIniciar = document.getElementById('btn-iniciar-sherlock');
+      const btnCancelar = document.getElementById('btn-cancelar-sherlock');
+      if (btnIniciar) btnIniciar.disabled = false;
+      if (btnCancelar) btnCancelar.style.display = 'none';
+
+      const isOk = s.status === 'CONCLUIDO';
+      const lblTitulo = document.getElementById('sherlock-lbl-titulo-progresso');
+      if (lblTitulo) {
+        lblTitulo.innerText = isOk ? 'Varredura Concluída para:' : 'Varredura Interrompida para:';
+      }
+      const iconBox = document.getElementById('sherlock-progresso-icon-box');
+      if (iconBox) {
+        iconBox.className = isOk
+          ? 'w-9 h-9 rounded-full bg-gh-green/15 border border-gh-green/40 flex items-center justify-center text-gh-green'
+          : 'w-9 h-9 rounded-full bg-gh-yellow/15 border border-gh-yellow/40 flex items-center justify-center text-gh-yellow';
+        iconBox.innerHTML = `<i data-lucide="${isOk ? 'check-circle-2' : 'alert-triangle'}" style="width:18px;height:18px;"></i>`;
+      }
+      if (progFill && isOk) {
+        progFill.className = 'bg-gh-green h-full transition-all duration-300';
+      }
+      if (badgeProg && isOk) {
+        badgeProg.className = 'badge badge-green font-mono';
+      }
+
+      const lblStatus = document.getElementById('sherlock-lbl-status');
+      if (lblStatus) {
+        lblStatus.innerHTML = isOk
+          ? `<span class="text-gh-green font-semibold">✔ Varredura finalizada em ${s.tempo_decorrido_s}s! ${activeSherlockResults.length} perfil(is) confirmado(s).</span>`
+          : `<span class="text-gh-yellow font-semibold">Varredura interrompida pelo operador.</span>`;
+      }
+
+      const boxResultados = document.getElementById('sherlock-box-resultados');
+      if (boxResultados) boxResultados.style.display = 'block';
+      renderizarCardsResultadosSherlock(activeSherlockResults);
+      renderIcons();
+
+      carregarHistoricoSherlock();
+      refreshStats();
+    }
+  } catch (err) {
+    console.error('Erro no polling do Sherlock:', err);
+  }
+}
+
+async function cancelarVarreduraSherlock() {
+  if (!activeSherlockScanId) return;
+  try {
+    await fetch(`/api/sherlock/cancelar/${activeSherlockScanId}`, { method: 'POST' });
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function renderizarCardsResultadosSherlock(itens) {
+  const grid = document.getElementById('sherlock-grid-resultados');
+  const countBadge = document.getElementById('sherlock-count-badge');
+  if (countBadge) countBadge.innerText = `${itens.length} confirmado(s)`;
+  if (!grid) return;
+
+  if (!itens.length) {
+    grid.innerHTML = `
+      <div class="col-span-full bg-gh-card border border-gh-border rounded-lg p-6 text-center text-gh-muted text-xs">
+        Nenhum perfil ativo com este username foi detectado nas redes sondadas.
+      </div>
+    `;
+    return;
+  }
+
+  grid.innerHTML = itens.map(it => {
+    const isNsfw = it.is_nsfw;
+    const initial = it.site.charAt(0).toUpperCase();
+    return `
+      <div class="sherlock-card bg-gh-card border border-gh-border rounded-lg p-3.5 flex flex-col justify-between gap-2.5 hover:border-gh-blue/50 transition" data-site-name="${escapeHtml(it.site.toLowerCase())}">
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between gap-1.5">
+            <div class="flex items-center gap-2 min-w-0">
+              <div class="w-7 h-7 rounded-md bg-gh-blue/15 border border-gh-blue/30 flex items-center justify-center font-bold text-xs text-gh-blue shrink-0">
+                ${initial}
+              </div>
+              <strong class="text-xs font-semibold text-gh-title truncate">${escapeHtml(it.site)}</strong>
+            </div>
+            ${isNsfw ? '<span class="badge badge-red text-[10px]" title="Conteúdo Adulto">NSFW</span>' : '<span class="badge badge-green text-[10px]"><i data-lucide="check" style="width:10px;height:10px;"></i><span>Ativo</span></span>'}
+          </div>
+          <p class="text-[11px] font-mono text-gh-muted truncate" title="${escapeHtml(it.url)}">${escapeHtml(it.url)}</p>
+        </div>
+        <div class="pt-1.5 border-t border-gh-border flex items-center justify-between">
+          <span class="text-[10px] text-gh-muted">${it.encontrado_em ? it.encontrado_em.slice(11, 16) : ''}</span>
+          <a href="${escapeHtml(it.url)}" target="_blank" rel="noopener noreferrer" class="btn-primary" style="padding:3px 9px; font-size:11px; text-decoration:none;">
+            <span>Abrir Perfil</span>
+            <i data-lucide="external-link" style="width:11px;height:11px;"></i>
+          </a>
+        </div>
+      </div>
+    `;
+  }).join('');
+  renderIcons();
+}
+
+function filtrarCardsSherlock() {
+  const query = (document.getElementById('sherlock-filtro-busca').value || '').trim().toLowerCase();
+  const cards = document.querySelectorAll('.sherlock-card');
+  cards.forEach(card => {
+    const sName = card.getAttribute('data-site-name') || '';
+    card.style.display = (!query || sName.includes(query)) ? 'flex' : 'none';
+  });
+}
+
+function exportarSherlockAtual(formato) {
+  if (!activeSherlockScanId) {
+    alert('Nenhuma varredura recente para exportar.');
+    return;
+  }
+  window.open(`/api/sherlock/exportar/${activeSherlockScanId}?formato=${formato}`, '_blank');
+}
+
+function sincronizarBotoesVerSherlock() {
+  const boxResultados = document.getElementById('sherlock-box-resultados');
+  const painelVisivel = Boolean(boxResultados && boxResultados.style.display !== 'none');
+
+  document.querySelectorAll('button[data-scan-ver]').forEach(btn => {
+    const sid = btn.getAttribute('data-scan-ver');
+    const isAtivo = painelVisivel && activeSherlockScanId && sid === activeSherlockScanId;
+    if (isAtivo) {
+      btn.classList.add('btn-ver-ativo');
+      btn.innerHTML = '<i data-lucide="eye-off"></i><span>Ocultar</span>';
+      btn.title = 'Clique novamente para ocultar os resultados da tela';
+    } else {
+      btn.classList.remove('btn-ver-ativo');
+      btn.innerHTML = '<i data-lucide="eye"></i><span>Ver</span>';
+      btn.title = 'Exibir resultados na tela';
+    }
+  });
+  renderIcons();
+}
+
+function fecharResultadosSherlock() {
+  const boxResultados = document.getElementById('sherlock-box-resultados');
+  if (boxResultados) boxResultados.style.display = 'none';
+  const filtro = document.getElementById('sherlock-filtro-busca');
+  if (filtro) filtro.value = '';
+  sincronizarBotoesVerSherlock();
+}
+
+let historicoSherlockAberto = true;
+function toggleHistoricoSherlock() {
+  const boxTabela = document.getElementById('sherlock-box-historico-tabela');
+  const btn = document.getElementById('btn-toggle-historico-sherlock');
+  if (!boxTabela) return;
+  historicoSherlockAberto = !historicoSherlockAberto;
+  boxTabela.style.display = historicoSherlockAberto ? 'block' : 'none';
+  if (btn) {
+    btn.innerHTML = `<i data-lucide="${historicoSherlockAberto ? 'chevron-up' : 'chevron-down'}"></i><span>${historicoSherlockAberto ? 'Recolher' : 'Expandir'}</span>`;
+    renderIcons();
+  }
+}
+
+async function excluirScanHistorico(scanId) {
+  if (!confirm('Deseja excluir este registro de varredura do histórico?')) return;
+  try {
+    const res = await fetch(`/api/sherlock/historico/${scanId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.sucesso) {
+      if (activeSherlockScanId === scanId) {
+        activeSherlockScanId = null;
+        fecharResultadosSherlock();
+      }
+      await carregarHistoricoSherlock();
+    } else {
+      alert('Não foi possível excluir o registro.');
+    }
+  } catch (err) {
+    console.error('Erro ao excluir scan do histórico:', err);
+  }
+}
+
+async function limparTodoHistoricoSherlock() {
+  if (!confirm('Atenção: Tem certeza que deseja apagar TODO o histórico de investigações Sherlock OSINT?\nEsta ação excluirá todos os registros salvos.')) return;
+  try {
+    const res = await fetch('/api/sherlock/historico/limpar', { method: 'POST' });
+    const data = await res.json();
+    if (data.sucesso) {
+      activeSherlockScanId = null;
+      fecharResultadosSherlock();
+      await carregarHistoricoSherlock();
+    } else {
+      alert('Não foi possível limpar o histórico.');
+    }
+  } catch (err) {
+    console.error('Erro ao limpar histórico Sherlock:', err);
+  }
+}
+
+async function carregarHistoricoSherlock() {
+  const tbody = document.getElementById('sherlock-tbody-historico');
+  if (!tbody) return;
+  try {
+    const res = await fetch('/api/sherlock/historico');
+    const data = await res.json();
+    if (!data.sucesso || !data.historico || !data.historico.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-gh-muted py-6">Nenhuma varredura realizada ainda.</td></tr>';
+      return;
+    }
+
+    const boxResultados = document.getElementById('sherlock-box-resultados');
+    const painelVisivel = Boolean(boxResultados && boxResultados.style.display !== 'none');
+
+    tbody.innerHTML = data.historico.map(h => {
+      const isAtivo = painelVisivel && activeSherlockScanId === h.scan_id;
+      return `
+      <tr>
+        <td><strong class="font-mono text-gh-title">@${escapeHtml(h.username)}</strong></td>
+        <td><span class="badge ${h.modo === 'todos' ? 'badge-blue' : 'badge-yellow'}">${h.modo === 'todos' ? 'Completa (480+)' : 'Principais (~60)'}</span></td>
+        <td>${h.total} redes</td>
+        <td><strong class="text-gh-green font-mono">${h.encontrados_count} perfis</strong></td>
+        <td>${h.tempo_decorrido_s}s</td>
+        <td>${h.criado_em ? h.criado_em.slice(0, 16) : '-'}</td>
+        <td>
+          <div class="inline-flex items-center gap-1.5">
+            <button type="button" class="btn-secondary-sm ${isAtivo ? 'btn-ver-ativo' : ''}" data-scan-ver="${escapeHtml(h.scan_id)}" onclick="carregarScanHistorico('${h.scan_id}')" title="${isAtivo ? 'Clique novamente para ocultar os resultados' : 'Exibir resultados na tela'}">
+              <i data-lucide="${isAtivo ? 'eye-off' : 'eye'}"></i>
+              <span>${isAtivo ? 'Ocultar' : 'Ver'}</span>
+            </button>
+            <a href="/api/sherlock/exportar/${h.scan_id}?formato=csv" class="btn-secondary-sm" style="text-decoration:none;" title="Baixar CSV">
+              <i data-lucide="file-spreadsheet" class="text-gh-green"></i>
+            </a>
+            <button type="button" class="btn-secondary-sm" onclick="excluirScanHistorico('${h.scan_id}')" title="Excluir este registro" style="color:var(--danger); border-color:rgba(248,81,73,0.4);">
+              <i data-lucide="trash-2"></i>
+            </button>
+          </div>
+        </td>
+      </tr>
+      `;
+    }).join('');
+    renderIcons();
+  } catch (err) {
+    console.error('Erro ao carregar histórico Sherlock:', err);
+  }
+}
+
+async function carregarScanHistorico(scanId) {
+  const boxResultados = document.getElementById('sherlock-box-resultados');
+  const jaVisivelMesmoScan = Boolean(
+    activeSherlockScanId === scanId &&
+    boxResultados &&
+    boxResultados.style.display !== 'none'
+  );
+
+  // Se o operador clicar em "Ver / Ocultar" na mesma varredura já aberta, fecha o painel!
+  if (jaVisivelMesmoScan) {
+    fecharResultadosSherlock();
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/sherlock/status/${scanId}`);
+    const data = await res.json();
+    if (!data.sucesso || !data.scan) return;
+    const s = data.scan;
+    activeSherlockScanId = s.scan_id;
+    activeSherlockResults = s.encontrados || [];
+
+    const inputUser = document.getElementById('sherlock-input-username');
+    if (inputUser) inputUser.value = s.username;
+    const selModo = document.getElementById('sherlock-select-modo');
+    if (selModo) selModo.value = s.modo || 'principais';
+    if (s.caso_id) {
+      const selCaso = document.getElementById('sherlock-select-caso');
+      if (selCaso) selCaso.value = s.caso_id;
+    }
+
+    const boxProgresso = document.getElementById('sherlock-box-progresso');
+    if (boxProgresso) boxProgresso.style.display = 'none';
+
+    if (boxResultados) boxResultados.style.display = 'block';
+
+    renderizarCardsResultadosSherlock(activeSherlockResults);
+    sincronizarBotoesVerSherlock();
+    if (boxResultados) boxResultados.scrollIntoView({ behavior: 'smooth' });
+  } catch (err) {
+    console.error('Erro ao abrir scan do histórico:', err);
+  }
+}
+
+window.selecionarAlvoAtalhoSherlock = selecionarAlvoAtalhoSherlock;
+window.investigarNoSherlock = investigarNoSherlock;
+window.iniciarVarreduraSherlock = iniciarVarreduraSherlock;
+window.cancelarVarreduraSherlock = cancelarVarreduraSherlock;
+window.filtrarCardsSherlock = filtrarCardsSherlock;
+window.exportarSherlockAtual = exportarSherlockAtual;
+window.fecharResultadosSherlock = fecharResultadosSherlock;
+window.toggleHistoricoSherlock = toggleHistoricoSherlock;
+window.excluirScanHistorico = excluirScanHistorico;
+window.limparTodoHistoricoSherlock = limparTodoHistoricoSherlock;
+window.carregarHistoricoSherlock = carregarHistoricoSherlock;
+window.carregarScanHistorico = carregarScanHistorico;
+
+
+/* ==============================================================================
+   MÓDULO BLOCO DE NOTAS OPERACIONAL & DIÁRIO "ONDE PAREI"
+   ============================================================================== */
+
+async function carregarNotasOperacionais() {
+  try {
+    const res = await fetch('/api/notas');
+    const data = await res.json();
+    if (!data.sucesso) return;
+
+    cachedNotas = data.notas || [];
+    const rascunho = data.rascunho || { texto: '', atualizado_em: '' };
+
+    const badgeNotas = document.getElementById('badge-notas-count');
+    if (badgeNotas) badgeNotas.innerText = cachedNotas.length;
+
+    // Sincroniza textareas apenas se o operador não estiver digitando neles no momento
+    const txtTab = document.getElementById('notas-rascunho-texto');
+    if (txtTab && document.activeElement !== txtTab) {
+      txtTab.value = rascunho.texto || '';
+    }
+    const txtModal = document.getElementById('modal-notas-rascunho-texto');
+    if (txtModal && document.activeElement !== txtModal) {
+      txtModal.value = rascunho.texto || '';
+    }
+
+    atualizarIndicadorRascunho(rascunho.atualizado_em ? `Salvo em ${rascunho.atualizado_em.slice(11, 19)}` : 'Sincronizado no SQLite', false);
+    renderizarGridNotas();
+    renderizarNotasRecentesModal();
+  } catch (err) {
+    console.error('Erro ao carregar Bloco de Notas:', err);
+  }
+}
+
+function atualizarIndicadorRascunho(mensagem, salvando = false) {
+  const pill = document.getElementById('notas-rascunho-status');
+  if (pill) {
+    pill.innerHTML = salvando
+      ? `<i data-lucide="loader-2" class="animate-spin text-gh-yellow"></i><span>${escapeHtml(mensagem)}</span>`
+      : `<i data-lucide="check-circle-2" class="text-gh-green"></i><span>${escapeHtml(mensagem)}</span>`;
+    renderIcons(pill);
+  }
+  const lblModal = document.getElementById('modal-rascunho-status-lbl');
+  if (lblModal) {
+    lblModal.innerText = mensagem;
+    lblModal.style.color = salvando ? 'var(--accent-yellow)' : 'var(--accent-green)';
+  }
+}
+
+function agendarAutoSaveRascunho(texto, fromModal = false) {
+  if (fromModal) {
+    const txtTab = document.getElementById('notas-rascunho-texto');
+    if (txtTab) txtTab.value = texto;
+  } else {
+    const txtModal = document.getElementById('modal-notas-rascunho-texto');
+    if (txtModal) txtModal.value = texto;
+  }
+
+  atualizarIndicadorRascunho('Salvando automaticamente...', true);
+  if (autoSaveRascunhoTimer) clearTimeout(autoSaveRascunhoTimer);
+  autoSaveRascunhoTimer = setTimeout(async () => {
+    try {
+      const res = await fetch('/api/notas/rascunho', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texto })
+      });
+      const data = await res.json();
+      if (data.sucesso && data.rascunho) {
+        const hora = (data.rascunho.atualizado_em || '').slice(11, 19);
+        atualizarIndicadorRascunho(hora ? `Salvo às ${hora}` : 'Salvo no SQLite', false);
+      }
+    } catch (err) {
+      atualizarIndicadorRascunho('Falha ao salvar rascunho', false);
+    }
+  }, 650);
+}
+
+async function salvarRascunhoRapidoManual(btnEl) {
+  if (autoSaveRascunhoTimer) {
+    clearTimeout(autoSaveRascunhoTimer);
+    autoSaveRascunhoTimer = null;
+  }
+  const txtTab = document.getElementById('notas-rascunho-texto');
+  const texto = txtTab ? txtTab.value : '';
+
+  await executarBotaoComFeedback(btnEl, null, async () => {
+    const res = await fetch('/api/notas/rascunho', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ texto })
+    });
+    const data = await res.json();
+    if (data.sucesso && data.rascunho) {
+      const hora = (data.rascunho.atualizado_em || '').slice(11, 19);
+      atualizarIndicadorRascunho(hora ? `Salvo às ${hora}` : 'Salvo no SQLite', false);
+    }
+  }, 'Salvando...', 'Salvo!');
+}
+
+async function abrirModalNotasRapidas() {
+  await carregarNotasOperacionais();
+  abrirModal('modal-notas-rapidas');
+  renderIcons();
+}
+
+function renderizarNotasRecentesModal() {
+  const box = document.getElementById('modal-notas-recentes-lista');
+  if (!box) return;
+  if (!cachedNotas.length) {
+    box.innerHTML = '<p class="text-xs text-gh-muted">Nenhum cartão de nota salvo ainda. Use "Ver Todas / Nova Nota" para criar lembretes categorizados.</p>';
+    return;
+  }
+
+  const recentes = cachedNotas.slice(0, 5);
+  box.innerHTML = recentes.map(n => `
+    <div class="bg-gh-bg border border-gh-border rounded-lg p-2.5 flex items-start justify-between gap-2">
+      <div class="min-w-0">
+        <div class="flex items-center gap-1.5 flex-wrap">
+          ${n.fixada ? '<i data-lucide="pin" class="text-gh-yellow" style="width:12px;height:12px;"></i>' : ''}
+          <strong class="text-xs text-gh-title">${escapeHtml(n.titulo)}</strong>
+          ${n.alvo_vinculado ? `<span class="attempt-tag">@${escapeHtml(n.alvo_vinculado)}</span>` : ''}
+        </div>
+        <p class="text-xs text-gh-muted line-clamp-2 mt-1">${escapeHtml(n.conteudo || '')}</p>
+      </div>
+      <span class="text-[11px] font-mono text-gh-muted shrink-0">${n.atualizado_em ? n.atualizado_em.slice(5, 16) : ''}</span>
+    </div>
+  `).join('');
+  renderIcons(box);
+}
+
+function obterMetaCategoriaNota(cat) {
+  switch (cat) {
+    case 'ONDE_PAREI':
+      return { label: 'Onde Parei', cls: 'badge-yellow', icon: 'bookmark-check' };
+    case 'PISTA':
+      return { label: 'Pista / Evidência', cls: 'badge-green', icon: 'search-check' };
+    case 'PENDENCIA':
+      return { label: 'Pendência', cls: 'badge-red', icon: 'clock' };
+    default:
+      return { label: 'Geral', cls: 'badge-blue', icon: 'file-text' };
+  }
+}
+
+function filtrarCategoriaNotas(cat, btnEl) {
+  currentNotaCatFilter = cat;
+  if (btnEl && btnEl.parentElement) {
+    btnEl.parentElement.querySelectorAll('.filter-chip').forEach(b => b.classList.remove('active'));
+    btnEl.classList.add('active');
+  }
+  renderizarGridNotas();
+}
+
+function renderizarGridNotas() {
+  const grid = document.getElementById('notas-grid-cards');
+  if (!grid) return;
+
+  const buscaEl = document.getElementById('input-busca-notas');
+  const termo = buscaEl ? buscaEl.value.trim().toLowerCase() : '';
+
+  const filtradas = cachedNotas.filter(n => {
+    if (currentNotaCatFilter === 'FIXADAS' && !n.fixada) return false;
+    if (currentNotaCatFilter !== 'TODAS' && currentNotaCatFilter !== 'FIXADAS' && n.categoria !== currentNotaCatFilter) {
+      return false;
+    }
+    if (!termo) return true;
+    const blob = `${n.titulo || ''} ${n.conteudo || ''} ${n.alvo_vinculado || ''} ${n.caso_nome || ''}`.toLowerCase();
+    return blob.includes(termo);
+  });
+
+  if (!filtradas.length) {
+    grid.innerHTML = `
+      <div class="col-span-full bg-gh-bg border border-gh-border rounded-lg p-7 text-center space-y-2">
+        <div class="w-10 h-10 rounded-full bg-gh-yellow/10 border border-gh-yellow/30 flex items-center justify-center text-gh-yellow mx-auto">
+          <i data-lucide="notebook-pen" style="width:18px;height:18px;"></i>
+        </div>
+        <div class="text-sm font-semibold text-gh-title">Nenhuma anotação encontrada</div>
+        <p class="text-xs text-gh-muted max-w-md mx-auto">Registre pistas, nicks descobertos no Sherlock ou pontos de parada usando o formulário ao lado.</p>
+      </div>
+    `;
+    renderIcons(grid);
+    return;
+  }
+
+  grid.innerHTML = filtradas.map(n => {
+    const meta = obterMetaCategoriaNota(n.categoria);
+    return `
+      <div class="nota-card ${n.fixada ? 'fixada' : ''}">
+        <div class="space-y-2.5">
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="badge ${meta.cls}">
+                <i data-lucide="${meta.icon}"></i>
+                <span>${escapeHtml(meta.label)}</span>
+              </span>
+              ${n.fixada ? '<span class="badge badge-yellow" title="Fixada no topo"><i data-lucide="pin"></i><span>Fixada</span></span>' : ''}
+            </div>
+            <span class="text-xs font-mono text-gh-muted shrink-0">${n.atualizado_em ? n.atualizado_em.slice(0, 16) : ''}</span>
+          </div>
+
+          <h4 class="text-base font-semibold text-gh-title">${escapeHtml(n.titulo)}</h4>
+
+          ${(n.alvo_vinculado || n.caso_nome) ? `
+            <div class="flex items-center gap-1.5 flex-wrap">
+              ${n.alvo_vinculado ? `<span class="attempt-tag">@${escapeHtml(n.alvo_vinculado)}</span>` : ''}
+              ${n.caso_nome ? `<span class="attempt-tag text-gh-blue"><i data-lucide="briefcase" style="width:11px;height:11px;display:inline;"></i> ${escapeHtml(n.caso_nome)}</span>` : ''}
+            </div>
+          ` : ''}
+
+          <div class="nota-conteudo-pre">${escapeHtml(n.conteudo || '')}</div>
+        </div>
+
+        <div class="pt-2.5 border-t border-gh-border flex items-center justify-between gap-1.5">
+          <button type="button" class="btn-secondary-sm" onclick="alternarFixarNotaUI(${n.id})" title="${n.fixada ? 'Desafixar do topo' : 'Fixar no topo'}">
+            <i data-lucide="pin" class="${n.fixada ? 'text-gh-yellow' : ''}"></i>
+            <span>${n.fixada ? 'Desafixar' : 'Fixar'}</span>
+          </button>
+          <div class="flex items-center gap-1.5">
+            <button type="button" class="btn-secondary-sm" onclick="editarNotaUI(${n.id})" title="Editar anotação">
+              <i data-lucide="pencil"></i>
+              <span>Editar</span>
+            </button>
+            <button type="button" class="btn-secondary-sm" onclick="excluirNotaUI(${n.id})" title="Excluir anotação" style="color:var(--danger);">
+              <i data-lucide="trash-2"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  renderIcons(grid);
+}
+
+async function salvarNotaOperacional() {
+  const id = document.getElementById('nota-input-id').value;
+  const titulo = document.getElementById('nota-input-titulo').value.trim();
+  const categoria = document.getElementById('nota-input-categoria').value;
+  const alvo_vinculado = document.getElementById('nota-input-alvo').value.trim();
+  const caso_id = document.getElementById('nota-select-caso').value || null;
+  const conteudo = document.getElementById('nota-input-conteudo').value.trim();
+  const fixada = document.getElementById('nota-chk-fixada').checked;
+
+  if (!titulo && !conteudo) {
+    alert('Preencha ao menos o Título ou os Detalhes da anotação.');
+    return;
+  }
+
+  const payload = { titulo: titulo || 'Anotação Operacional', categoria, alvo_vinculado, caso_id, conteudo, fixada };
+  try {
+    const url = id ? `/api/notas/${id}` : '/api/notas';
+    const method = id ? 'PUT' : 'POST';
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!data.sucesso) {
+      alert(data.erro || 'Erro ao salvar anotação.');
+      return;
+    }
+    limparFormularioNota();
+    await Promise.all([carregarNotasOperacionais(), refreshStats()]);
+  } catch (err) {
+    alert('Erro de conexão ao salvar anotação: ' + err);
+  }
+}
+
+function editarNotaUI(notaId) {
+  const n = cachedNotas.find(x => Number(x.id) === Number(notaId));
+  if (!n) return;
+  document.getElementById('nota-input-id').value = n.id;
+  document.getElementById('nota-input-titulo').value = n.titulo || '';
+  document.getElementById('nota-input-categoria').value = n.categoria || 'GERAL';
+  document.getElementById('nota-input-alvo').value = n.alvo_vinculado || '';
+  document.getElementById('nota-select-caso').value = n.caso_id || '';
+  document.getElementById('nota-input-conteudo').value = n.conteudo || '';
+  document.getElementById('nota-chk-fixada').checked = Boolean(n.fixada);
+
+  const hdr = document.getElementById('form-nota-titulo-header');
+  if (hdr) {
+    hdr.innerHTML = `<i data-lucide="pencil" class="text-gh-yellow"></i><span>Editando Nota #${n.id}</span>`;
+  }
+  const btnCancel = document.getElementById('btn-cancelar-edicao-nota');
+  if (btnCancel) btnCancel.style.display = 'inline-flex';
+  const btnSalvar = document.getElementById('btn-salvar-nota');
+  if (btnSalvar) btnSalvar.innerHTML = `<i data-lucide="save"></i><span>Atualizar Anotação</span>`;
+
+  renderIcons();
+  document.getElementById('nota-input-titulo').focus();
+}
+
+function limparFormularioNota() {
+  document.getElementById('nota-input-id').value = '';
+  document.getElementById('nota-input-titulo').value = '';
+  document.getElementById('nota-input-categoria').value = 'ONDE_PAREI';
+  document.getElementById('nota-input-alvo').value = '';
+  document.getElementById('nota-select-caso').value = '';
+  document.getElementById('nota-input-conteudo').value = '';
+  document.getElementById('nota-chk-fixada').checked = false;
+
+  const hdr = document.getElementById('form-nota-titulo-header');
+  if (hdr) {
+    hdr.innerHTML = `<i data-lucide="file-plus-2" class="text-gh-blue"></i><span>Nova Anotação</span>`;
+  }
+  const btnCancel = document.getElementById('btn-cancelar-edicao-nota');
+  if (btnCancel) btnCancel.style.display = 'none';
+  const btnSalvar = document.getElementById('btn-salvar-nota');
+  if (btnSalvar) btnSalvar.innerHTML = `<i data-lucide="check"></i><span>Salvar Anotação</span>`;
+  renderIcons();
+}
+
+async function alternarFixarNotaUI(notaId) {
+  try {
+    await fetch(`/api/notas/${notaId}/fixar`, { method: 'POST' });
+    await carregarNotasOperacionais();
+  } catch (err) {
+    console.error('Erro ao fixar nota:', err);
+  }
+}
+
+async function excluirNotaUI(notaId) {
+  if (!confirm('Deseja excluir esta anotação do Bloco de Notas?')) return;
+  try {
+    await fetch(`/api/notas/${notaId}`, { method: 'DELETE' });
+    if (String(document.getElementById('nota-input-id').value) === String(notaId)) {
+      limparFormularioNota();
+    }
+    await Promise.all([carregarNotasOperacionais(), refreshStats()]);
+  } catch (err) {
+    console.error('Erro ao excluir nota:', err);
+  }
+}
+
+async function limparTodasNotasUI() {
+  if (!confirm('Tem certeza que deseja apagar todos os cartões de anotações salvos?\n(O rascunho rápido no topo será preservado).')) return;
+  try {
+    await fetch('/api/notas/limpar', { method: 'POST' });
+    limparFormularioNota();
+    await Promise.all([carregarNotasOperacionais(), refreshStats()]);
+  } catch (err) {
+    console.error('Erro ao limpar notas:', err);
+  }
+}
+
+window.agendarAutoSaveRascunho = agendarAutoSaveRascunho;
+window.salvarRascunhoRapidoManual = salvarRascunhoRapidoManual;
+window.abrirModalNotasRapidas = abrirModalNotasRapidas;
+window.filtrarCategoriaNotas = filtrarCategoriaNotas;
+window.renderizarGridNotas = renderizarGridNotas;
+window.salvarNotaOperacional = salvarNotaOperacional;
+window.editarNotaUI = editarNotaUI;
+window.limparFormularioNota = limparFormularioNota;
+window.alternarFixarNotaUI = alternarFixarNotaUI;
+window.excluirNotaUI = excluirNotaUI;
+window.limparTodasNotasUI = limparTodasNotasUI;

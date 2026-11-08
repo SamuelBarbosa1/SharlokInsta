@@ -72,13 +72,36 @@ def fazer_backup_e_limpar():
 
     # 3. Limpa arquivos temporários (banco SQLite local, logs e cache)
     print("\n[3/4] Removendo banco SQLite local e logs de execucao...")
+
+    # Se o servidor Web estiver rodando, aciona a API interna para limpar o buffer de logs em memória
+    try:
+        import urllib.request
+        req = urllib.request.Request("http://127.0.0.1:5000/api/logs/limpar", method="POST")
+        with urllib.request.urlopen(req, timeout=1.5) as resp:
+            if resp.status == 200:
+                print("  [OK] Buffer de logs em memória da API Flask zerado com sucesso.")
+    except Exception:
+        pass
+
     for db_file in ["osint_coletas.db", "osint_coletas.db-journal"]:
         if os.path.exists(db_file):
             try:
                 os.remove(db_file)
                 print(f"  [OK] {db_file} removido.")
             except Exception as e:
-                print(f"  [-] Aviso: {db_file} em uso ({e}).")
+                # Se o banco SQLite estiver bloqueado pelo Flask em execução, limpa os dados internamente via SQL
+                try:
+                    import sqlite3
+                    conn = sqlite3.connect(db_file, timeout=3.0)
+                    cur = conn.cursor()
+                    cur.execute("DELETE FROM logs_sistema")
+                    cur.execute("DELETE FROM coletas")
+                    cur.execute("DELETE FROM estado_sistema")
+                    conn.commit()
+                    conn.close()
+                    print(f"  [OK] {db_file} estava em uso: todas as tabelas (logs/coletas) foram esvaziadas (TRUNCATE)!")
+                except Exception as sqle:
+                    print(f"  [-] Aviso: {db_file} em uso ({e} | SQL: {sqle}).")
 
     for f in os.listdir("."):
         if f.endswith(".log"):

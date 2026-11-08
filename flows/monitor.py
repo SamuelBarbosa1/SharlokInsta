@@ -58,9 +58,17 @@ def fluxo_verificar_e_baixar():
                     info = obter_info_perfil(page, username)
                     btn_st = info["button_status"]
 
-                    # Caso A: Foi aceito
-                    if btn_st == "SEGUINDO":
-                        print(f"[+] SUCESSO! @{username} ACEITOU a solicitação de @{conta_cfg.get('user')}!")
+                    if info.get("login_required"):
+                        print(f"[-] Sessão expirada ou challenge na conta @{conta_cfg.get('user')}. Atualize o SessionID no Pool de Contas!")
+                        continue
+                    if not info.get("exists", True):
+                        print(f"[!] O perfil @{username} não está disponível no Instagram (inexistente, desativado ou bloqueou o bot).")
+                        continue
+
+                    # Caso A: Foi aceito (ou tornou o perfil público!)
+                    if btn_st == "SEGUINDO" or not info["is_private"]:
+                        motivo_aceite = "ACEITOU a solicitação" if btn_st == "SEGUINDO" else "está com o perfil PÚBLICO"
+                        print(f"[+] SUCESSO! @{username} {motivo_aceite} (verificado via @{conta_cfg.get('user')})!")
                         print(f"[*] Disparando download automático de todo o conteúdo de @{username}...")
                         qtd = extrair_e_baixar_fotos(page, username, max_scrolls=max_scrolls_padrao)
                         alvo["status"] = "CONCLUIDO"

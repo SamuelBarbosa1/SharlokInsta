@@ -1,12 +1,14 @@
 import os
+import io
 import sys
 import json
+import shutil
 import random
 import threading
 import time
 import logging
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, send_file, Response
 
 from core.database import (
     inicializar_banco,
@@ -37,7 +39,28 @@ from core.cases import (
     obter_mapa_alvo_caso,
     obter_caso_por_id,
     desvincular_alvos_excluidos,
-    atualizar_status_automatico_casos
+    atualizar_status_automatico_casos,
+    pasta_tem_extracao_valida
+)
+from core.notes import (
+    inicializar_tabela_notas,
+    listar_notas,
+    contar_notas,
+    criar_nota,
+    atualizar_nota,
+    alternar_fixar_nota,
+    excluir_nota,
+    limpar_todas_notas,
+    obter_rascunho_rapido,
+    salvar_rascunho_rapido
+)
+from core.sherlock_engine import (
+    iniciar_scan_sherlock_background,
+    obter_status_scan_sherlock,
+    cancelar_scan_sherlock,
+    listar_historico_sherlock_db,
+    excluir_scan_sherlock_db,
+    limpar_todo_historico_sherlock_db
 )
 from core.config import (
     CONTAS_POOL_FILE,
@@ -71,9 +94,14 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 
 # Buffer circular de logs em memória sincronizado com SQLite
 inicializar_banco()
+inicializar_tabela_notas()
 LOG_MESSAGES = carregar_logs_db(300)
 LOG_LOCK = threading.Lock()
 MAX_LOGS = 400
+
+EXTRACAO_LOCK = threading.Lock()
+EXTRACOES_ATIVAS = set()
+VERIFICACAO_ATIVA = False
 
 sentinela_thread = None
 sentinela_ativo = False
@@ -189,7 +217,10 @@ def api_stats():
     downloads_dir = "downloads"
     perfis_baixados = 0
     if os.path.exists(downloads_dir):
-        perfis_baixados = len([d for d in os.listdir(downloads_dir) if os.path.isdir(os.path.join(downloads_dir, d))])
+        perfis_baixados = len([
+            d for d in os.listdir(downloads_dir)
+            if pasta_tem_extracao_valida(os.path.join(downloads_dir, d))
+        ])
 
     db_existe = os.path.exists(DB_NAME)
     db_tamanho_kb = round(os.path.getsize(DB_NAME) / 1024, 1) if db_existe else 0
@@ -203,6 +234,7 @@ def api_stats():
         "alvos_concluidos": concluidos,
         "alvos_pendentes": pendentes,
         "perfis_baixados": perfis_baixados,
+        "total_notas": contar_notas(),
         "sentinela_ativo": sentinela_ativo,
         "sentinela_intervalo": sentinela_intervalo,
         "tarefa_atual": tarefa_atual,
@@ -462,6 +494,8 @@ def _disparar_fila_alvos_background(limpos: list, modo: str = "distribuido", con
                         elif st == "SOLICITADO":
                             log_event(f"[!] Solicitação de @{bot_user} para @{u} já estava pendente no Instagram.", "AVISO")
                             registrar_novo_alvo(u, is_private=info["is_private"], conta_usada=bot_user, caso_id=caso_id)
+                        elif u.lower() == bot_user.lower():
+                            log_event(f"[!] Ignorando @{u}: o alvo informado é a própria conta fantoche selecionada.", "AVISO")
                         else:
                             clicked = False
                             for btn in page.query_selector_all("header button, main header button, button"):
@@ -507,7 +541,7 @@ def api_casos():
         pastas_dl = set()
         if os.path.exists("downloads"):
             for item in os.listdir("downloads"):
-                if os.path.isdir(os.path.join("downloads", item)):
+                if pasta_tem_extracao_valida(os.path.join("downloads", item)):
                     pastas_dl.add(item.replace("@", "").lower())
 
         enriquecidos = []
@@ -651,6 +685,7 @@ def baixar_zip_caso(caso_id):
             f"",
             f"Contas Investigadas Vinculadas ({len(caso.get('alvos', []))}):",
         ]
+        alvos_lower_set = {str(x).lower() for x in caso.get("alvos", [])}
         for u in caso.get("alvos", []):
             resumo_linhas.append(f" - @{u}")
             pasta_alvo = os.path.join("downloads", f"@{u}")
@@ -663,6 +698,41 @@ def baixar_zip_caso(caso_id):
                         rel_path = os.path.relpath(full_path, pasta_alvo)
                         zipf.write(full_path, arcname=os.path.join(f"@{u}", rel_path))
                         arquivos_adicionados += 1
+
+        # Anexa varreduras Sherlock OSINT vinculadas aos alvos ou ao caso
+        try:
+            hist_sherlock = listar_historico_sherlock_db(limite=100)
+            linhas_sherlock = []
+            for h in hist_sherlock:
+                u_s = str(h.get("username", "")).lower()
+                if (h.get("caso_id") and int(h.get("caso_id")) == int(caso_id)) or (u_s in alvos_lower_set):
+                    st_scan = obter_status_scan_sherlock(h["scan_id"])
+                    if st_scan and st_scan.get("encontrados"):
+                        linhas_sherlock.append(f"=== SHERLOCK OSINT: @{st_scan['username']} ({st_scan.get('criado_em', '')}) ===")
+                        for it in st_scan["encontrados"]:
+                            linhas_sherlock.append(f" - {it['site']}: {it['url']}")
+                        linhas_sherlock.append("")
+            if linhas_sherlock:
+                zipf.writestr("SHERLOCK_MULTI_REDES.txt", "\n".join(linhas_sherlock))
+                arquivos_adicionados += 1
+        except Exception:
+            pass
+
+        # Anexa anotações do Bloco de Notas vinculadas a este caso
+        try:
+            notas_caso = listar_notas(caso_id=caso_id)
+            if notas_caso:
+                linhas_notas = [f"ANOTACOES OPERACIONAIS DO CASO #{caso_id} - {caso.get('nome')}", "=" * 56, ""]
+                for n in notas_caso:
+                    linhas_notas.append(f"[{n['categoria']}] {n['titulo']} ({n['atualizado_em']})")
+                    if n.get("alvo_vinculado"):
+                        linhas_notas.append(f"Alvo: @{n['alvo_vinculado']}")
+                    linhas_notas.append(n["conteudo"])
+                    linhas_notas.append("-" * 45)
+                zipf.writestr("ANOTACOES_DO_CASO.txt", "\n".join(linhas_notas))
+                arquivos_adicionados += 1
+        except Exception:
+            pass
 
         zipf.writestr("DOSSIE_DO_CASO.txt", "\n".join(resumo_linhas))
 
@@ -769,6 +839,15 @@ def api_baixar_direto():
     if not target:
         return jsonify({"sucesso": False, "erro": "Username obrigatório"}), 400
 
+    target_key = target.lower()
+    with EXTRACAO_LOCK:
+        if target_key in EXTRACOES_ATIVAS:
+            return jsonify({
+                "sucesso": False,
+                "erro": f"Já existe uma extração em andamento para @{target}. Aguarde alguns segundos pelos logs!"
+            }), 409
+        EXTRACOES_ATIVAS.add(target_key)
+
     if caso_id and str(caso_id).isdigit() and int(caso_id) > 0:
         vincular_alvo_ao_caso(target, caso_id)
 
@@ -778,13 +857,15 @@ def api_baixar_direto():
         conta_escolhida = obter_conta_por_user(conta_user)
     if not conta_escolhida:
         alvos = carregar_alvos()
-        alvo_reg = next((a for a in alvos if a.get("username", "").lower() == target.lower()), None)
+        alvo_reg = next((a for a in alvos if a.get("username", "").lower() == target_key), None)
         if alvo_reg and alvo_reg.get("conta_atual"):
             conta_escolhida = obter_conta_por_user(alvo_reg.get("conta_atual"))
     if not conta_escolhida:
         conta_escolhida = obter_conta_ativa()
 
     if not conta_escolhida or not conta_escolhida.get("sessionid"):
+        with EXTRACAO_LOCK:
+            EXTRACOES_ATIVAS.discard(target_key)
         return jsonify({"sucesso": False, "erro": "Nenhuma conta ativa configurada no Pool!"}), 400
 
     def _job():
@@ -792,76 +873,133 @@ def api_baixar_direto():
         session = conta_escolhida.get("sessionid", "")
         ds_uid = conta_escolhida.get("ds_user_id", "")
 
-        if engine == "go" and is_go_engine_disponivel():
-            set_tarefa_atual(f"Go Turbo: Extraindo @{target}...")
-            log_event(f"Iniciando extração em ALTA VELOCIDADE (Golang REST) para @{target} via @{bot_nome}...", "INFO")
-            try:
-                qtd = extrair_perfil_via_go(
-                    username=target,
-                    sessionid=session,
-                    ds_user_id=ds_uid,
-                    max_feed=max_scrolls * 20,
-                    max_followers=0,
-                    max_following=0,
-                    workers=12
-                )
-                if qtd > 0:
-                    log_event(f"[✔] Extração Golang concluída para @{target} ({qtd} arquivos de mídia e listas completas salvas)!", "SUCESSO")
-                else:
-                    log_event(f"[!] Engine Go não obteve mídias de @{target}. Acionando fallback automático via Playwright (Navegador)...", "AVISO")
+        try:
+            if engine == "go" and is_go_engine_disponivel():
+                set_tarefa_atual(f"Go Turbo: Extraindo @{target}...")
+                log_event(f"Iniciando extração em ALTA VELOCIDADE (Golang REST) para @{target} via @{bot_nome}...", "INFO")
+                try:
+                    res_go = extrair_perfil_via_go(
+                        username=target,
+                        sessionid=session,
+                        ds_user_id=ds_uid,
+                        max_feed=max_scrolls * 20,
+                        max_followers=0,
+                        max_following=0,
+                        workers=12
+                    )
+                    st_go = res_go.get("status")
+                    qtd = int(res_go.get("arquivos") or 0)
+
+                    if st_go == "SUCESSO":
+                        pasta_alvo_go = os.path.join("downloads", f"@{target}")
+                        json_go = os.path.join(pasta_alvo_go, "dados_perfil.json")
+                        precisa_complemento_midias = False
+                        if os.path.exists(json_go):
+                            try:
+                                with open(json_go, "r", encoding="utf-8") as fg:
+                                    d_go = json.load(fg)
+                                    fotos_f = int(d_go.get("total_fotos_feed") or 0)
+                                    posts_esp = int(d_go.get("posts_esperados") or 0)
+                                    if fotos_f == 0 and posts_esp > 0:
+                                        precisa_complemento_midias = True
+                            except Exception:
+                                pass
+
+                        if precisa_complemento_midias:
+                            log_event(f"[+] Motor Go extraiu conexões completas e bio de @{target}! Capturando mídias visuais (Feed, Destaques e Stories)...", "INFO")
+                            set_tarefa_atual(f"Complementando mídias de @{target}...")
+                            _executar_playwright_fallback(target, conta_escolhida, max_scrolls)
+                        else:
+                            log_event(f"[✔] Extração Golang concluída para @{target} ({qtd} arquivos de mídia e listas completas salvas)!", "SUCESSO")
+                            _marcar_alvo_concluido_se_existir(target, qtd)
+                    elif st_go == "PRIVADO_NAO_ACEITO":
+                        log_event(f"[!] Alvo @{target} é PRIVADO e @{bot_nome} ainda não foi aceito. Use o Sentinela 24/7 ou investigue via Sherlock Multi-Redes.", "AVISO")
+                    elif st_go == "PERFIL_INEXISTENTE":
+                        log_event(f"[-] O perfil @{target} não existe ou foi desativado no Instagram.", "ERRO")
+                    elif st_go == "SESSAO_EXPIRADA":
+                        log_event(f"[-] Sessão expirada na conta @{bot_nome}! Renove o SessionID na aba Pool de Contas.", "ERRO")
+                    else:
+                        log_event(f"[!] Motor Go encontrou restrição REST em @{target}. Acionando fallback via Playwright (Navegador)...", "AVISO")
+                        _executar_playwright_fallback(target, conta_escolhida, max_scrolls)
+                except Exception as e_go:
+                    log_event(f"[!] Exceção no Motor Go ({e_go}). Acionando fallback via Playwright (Navegador)...", "AVISO")
                     _executar_playwright_fallback(target, conta_escolhida, max_scrolls)
-            except Exception as e_go:
-                log_event(f"[!] Motor Go encontrou restrição REST ({e_go}). Acionando fallback automático via Playwright (Navegador)...", "AVISO")
+            else:
+                set_tarefa_atual(f"Extraindo @{target} via @{bot_nome}...")
+                log_event(f"Iniciando extração completa de @{target} usando a conta @{bot_nome} ({max_scrolls} rolagens)...", "INFO")
                 _executar_playwright_fallback(target, conta_escolhida, max_scrolls)
-            finally:
-                atualizar_status_automatico_casos()
-                set_tarefa_atual(None)
-        else:
-            set_tarefa_atual(f"Extraindo @{target} via @{bot_nome}...")
-            log_event(f"Iniciando extração completa de @{target} usando a conta @{bot_nome} ({max_scrolls} rolagens)...", "INFO")
-            try:
-                _executar_playwright_fallback(target, conta_escolhida, max_scrolls)
-            finally:
-                atualizar_status_automatico_casos()
-                set_tarefa_atual(None)
+        finally:
+            with EXTRACAO_LOCK:
+                EXTRACOES_ATIVAS.discard(target_key)
+            atualizar_status_automatico_casos()
+            set_tarefa_atual(None)
 
     threading.Thread(target=_job, daemon=True).start()
     engine_nome = "Golang Turbo REST" if (engine == "go" and is_go_engine_disponivel()) else "Playwright Navegador"
     return jsonify({"sucesso": True, "mensagem": f"Extração de @{target} iniciada em segundo plano via motor {engine_nome}!"})
 
 
+def _marcar_alvo_concluido_se_existir(target, qtd):
+    alvos_atuais = carregar_alvos()
+    alterado = False
+    for a in alvos_atuais:
+        if a.get("username", "").lower() == target.lower():
+            a["status"] = "CONCLUIDO"
+            a["qtd_fotos_baixadas"] = qtd
+            a["concluido_em"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            a["atualizado_em"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            alterado = True
+    if alterado:
+        salvar_alvos(alvos_atuais)
+        atualizar_status_automatico_casos()
+
+
 def _executar_playwright_fallback(target, conta_escolhida, max_scrolls):
     bot_nome = conta_escolhida.get("user", "bot")
+    pasta_alvo = os.path.join("downloads", f"@{target.replace('@', '').strip()}")
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             ctx = criar_contexto_desktop(browser, conta_escolhida)
             page = ctx.new_page()
             info = obter_info_perfil(page, target)
-            if info["is_private"] and info["button_status"] != "SEGUINDO":
+            if info.get("login_required"):
+                log_event(f"[-] Sessão expirada na conta @{bot_nome}! Renove o SessionID na aba Pool de Contas.", "ERRO")
+            elif not info.get("exists", True):
+                log_event(f"[-] O perfil @{target} não foi encontrado no Instagram (inexistente ou indisponível).", "ERRO")
+            elif info["is_private"] and info["button_status"] != "SEGUINDO":
                 log_event(f"[!] Alvo @{target} é privado e @{bot_nome} ainda não foi aceito (Status: {info['button_status']}).", "AVISO")
             else:
                 qtd = extrair_e_baixar_fotos(page, target, max_scrolls=max_scrolls)
-                alvos_atuais = carregar_alvos()
-                alterado = False
-                for a in alvos_atuais:
-                    if a.get("username", "").lower() == target.lower():
-                        a["status"] = "CONCLUIDO"
-                        a["qtd_fotos_baixadas"] = qtd
-                        a["concluido_em"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        a["atualizado_em"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        alterado = True
-                if alterado:
-                    salvar_alvos(alvos_atuais)
-                    atualizar_status_automatico_casos()
+                if pasta_tem_extracao_valida(pasta_alvo):
+                    _marcar_alvo_concluido_se_existir(target, qtd)
             browser.close()
     except Exception as err:
         log_event(f"[-] Erro ao baixar perfil @{target}: {err}", "ERRO")
+    finally:
+        # Remove pasta residual vazia caso o perfil seja privado/inexistente
+        if os.path.isdir(pasta_alvo) and not pasta_tem_extracao_valida(pasta_alvo):
+            total_f = sum(len(files) for _r, _d, files in os.walk(pasta_alvo))
+            if total_f == 0:
+                try:
+                    shutil.rmtree(pasta_alvo)
+                except Exception:
+                    pass
 
 
 @app.route("/api/acoes/verificar_cascata", methods=["POST"])
 def api_verificar_cascata():
+    global VERIFICACAO_ATIVA
+    if VERIFICACAO_ATIVA:
+        return jsonify({
+            "sucesso": False,
+            "erro": "Uma varredura de solicitações já está em andamento. Acompanhe os Logs do Sistema!"
+        }), 409
+
+    VERIFICACAO_ATIVA = True
+
     def _job():
+        global VERIFICACAO_ATIVA
         set_tarefa_atual("Verificando solicitações e cascata...")
         log_event("Iniciando varredura de solicitações, recusa, vácuo e cascata...", "INFO")
         try:
@@ -870,6 +1008,8 @@ def api_verificar_cascata():
         except Exception as e:
             log_event(f"Erro na verificação de solicitações: {e}", "ERRO")
         finally:
+            VERIFICACAO_ATIVA = False
+            atualizar_status_automatico_casos()
             set_tarefa_atual(None)
 
     threading.Thread(target=_job, daemon=True).start()
@@ -940,11 +1080,42 @@ def api_listar_downloads():
             for _r, _d, files in os.walk(perfil_path):
                 total_arqs += len(files)
 
+            if total_arqs == 0:
+                continue
+
+            # Normaliza contadores "N/A" legados
+            contadores = info.get("contadores") or {}
+            fotos_f = int(info.get("total_fotos_feed") or 0)
+            seg_ext = int(info.get("conexoes", {}).get("seguidores", {}).get("total_extraido") or 0)
+            sdo_ext = int(info.get("conexoes", {}).get("seguindo", {}).get("total_extraido") or 0)
+            if not contadores.get("posts") or contadores.get("posts") == "N/A":
+                contadores["posts"] = f"{fotos_f} {'post' if fotos_f == 1 else 'posts'}"
+            if not contadores.get("seguidores") or contadores.get("seguidores") == "N/A":
+                contadores["seguidores"] = f"{seg_ext} seguidores"
+            if not contadores.get("seguindo") or contadores.get("seguindo") == "N/A":
+                contadores["seguindo"] = f"{sdo_ext} seguindo"
+            info["contadores"] = contadores
+
+            avatar_url = None
+            avatar_file = os.path.join(perfil_path, "avatar_perfil.jpg")
+            if os.path.exists(avatar_file) and os.path.getsize(avatar_file) > 300:
+                avatar_url = f"/midia/{item}/avatar_perfil.jpg"
+
+            extraido_em = ""
+            try:
+                ref_file = json_file if os.path.exists(json_file) else perfil_path
+                mtime = os.path.getmtime(ref_file)
+                extraido_em = datetime.fromtimestamp(mtime).strftime("%d/%m/%Y %H:%M")
+            except Exception:
+                pass
+
             uname = item.replace("@", "")
             info_c = mapa_casos.get(uname.lower())
             perfis.append({
                 "pasta": item,
                 "username": uname,
+                "avatar_url": avatar_url,
+                "extraido_em": extraido_em,
                 "dados": info,
                 "total_arquivos": total_arqs,
                 "caso_id": info_c["caso_id"] if info_c else None,
@@ -1022,12 +1193,35 @@ def api_detalhes_download(username):
                     "video": arq.lower().endswith(".mp4")
                 })
 
+    sherlock_descobertas = []
+    sherlock_json = os.path.join(pasta_alvo, "sherlock_descobertas.json")
+    if os.path.exists(sherlock_json):
+        try:
+            with open(sherlock_json, "r", encoding="utf-8") as f:
+                sherlock_descobertas = json.load(f)
+        except Exception:
+            pass
+    if not sherlock_descobertas:
+        try:
+            import sqlite3
+            from core.database import DB_NAME
+            conn = sqlite3.connect(DB_NAME)
+            cursor = conn.cursor()
+            cursor.execute("SELECT encontrados_json FROM sherlock_scans WHERE username = ? ORDER BY criado_em DESC LIMIT 1", (clean_user,))
+            row = cursor.fetchone()
+            conn.close()
+            if row and row[0]:
+                sherlock_descobertas = json.loads(row[0])
+        except Exception:
+            pass
+
     return jsonify({
         "sucesso": True,
         "username": clean_user,
         "bio_txt": bio_texto,
         "dados": dados,
-        "midias": midias
+        "midias": midias,
+        "sherlock": sherlock_descobertas
     })
 
 
@@ -1161,6 +1355,249 @@ def baixar_zip_perfil(username):
         mimetype="application/zip",
         as_attachment=True,
         download_name=f"@{clean_user}_extracao_completa.zip"
+    )
+
+
+# ==============================================================================
+# API: SHERLOCK OSINT (INVESTIGAÇÃO MULTI-REDES E PLATAFORMAS)
+# ==============================================================================
+
+@app.route("/api/sherlock/iniciar", methods=["POST"])
+def api_sherlock_iniciar():
+    data = request.json or {}
+    username = str(data.get("username", "")).replace("@", "").strip()
+    if not username:
+        return jsonify({"sucesso": False, "erro": "Informe um @username para investigar."}), 400
+
+    modo = str(data.get("modo", "principais")).lower()
+    if modo not in ["principais", "todos"]:
+        modo = "principais"
+
+    incluir_nsfw = bool(data.get("incluir_nsfw", False))
+    caso_id = data.get("caso_id")
+
+    scan_id = iniciar_scan_sherlock_background(
+        username=username,
+        modo=modo,
+        incluir_nsfw=incluir_nsfw,
+        caso_id=caso_id
+    )
+
+    modo_txt = "todas as 480+ redes" if modo == "todos" else "redes principais"
+    log_event(f"Varredura Sherlock OSINT iniciada para @{username} ({modo_txt}).", "INFO")
+    return jsonify({
+        "sucesso": True,
+        "scan_id": scan_id,
+        "username": username,
+        "mensagem": f"Varredura Sherlock iniciada para @{username}!"
+    })
+
+
+@app.route("/api/sherlock/status/<scan_id>", methods=["GET"])
+def api_sherlock_status(scan_id):
+    st = obter_status_scan_sherlock(scan_id)
+    if not st:
+        return jsonify({"sucesso": False, "erro": "Scan não encontrado."}), 404
+    return jsonify({"sucesso": True, "scan": st})
+
+
+@app.route("/api/sherlock/cancelar/<scan_id>", methods=["POST"])
+def api_sherlock_cancelar(scan_id):
+    ok = cancelar_scan_sherlock(scan_id)
+    if ok:
+        log_event(f"Varredura Sherlock {scan_id} cancelada pelo operador.", "AVISO")
+    return jsonify({"sucesso": ok})
+
+
+@app.route("/api/sherlock/historico", methods=["GET"])
+def api_sherlock_historico():
+    historico = listar_historico_sherlock_db(limite=50)
+    return jsonify({"sucesso": True, "historico": historico})
+
+
+@app.route("/api/sherlock/historico/<scan_id>", methods=["DELETE"])
+def api_sherlock_excluir_item(scan_id):
+    ok = excluir_scan_sherlock_db(scan_id)
+    if ok:
+        log_event(f"Varredura Sherlock {scan_id} excluída do histórico.", "INFO")
+    return jsonify({"sucesso": ok})
+
+
+@app.route("/api/sherlock/historico/limpar", methods=["POST"])
+def api_sherlock_limpar_todo_historico():
+    ok = limpar_todo_historico_sherlock_db()
+    if ok:
+        log_event("Histórico de investigações Sherlock OSINT totalmente limpo.", "INFO")
+    return jsonify({"sucesso": ok})
+
+
+@app.route("/api/sherlock/exportar/<scan_id>", methods=["GET"])
+def api_sherlock_exportar(scan_id):
+    formato = request.args.get("formato", "csv").lower()
+    st = obter_status_scan_sherlock(scan_id)
+    if not st:
+        return jsonify({"sucesso": False, "erro": "Varredura não encontrada no banco de dados."}), 404
+
+    username = st.get("username", "alvo")
+    encontrados = st.get("encontrados") or []
+
+    if formato == "txt":
+        linhas = [
+            "============================================================",
+            f" RELATÓRIO SHERLOCK OSINT - INVESTIGAÇÃO MULTI-REDES",
+            f" Alvo Investigado : @{username}",
+            f" Data/Hora        : {st.get('criado_em', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))}",
+            f" Modo de Varredura: {st.get('modo', 'principais')}",
+            f" Redes Testadas   : {st.get('total', len(encontrados))}",
+            f" Perfis Ativos    : {len(encontrados)}",
+            "============================================================\n"
+        ]
+        if not encontrados:
+            linhas.append("Nenhum perfil público confirmado nas redes sondadas.")
+        else:
+            for it in encontrados:
+                nsfw_tag = " [ADULTO/NSFW]" if it.get("is_nsfw") else ""
+                linhas.append(f"• {it['site']}{nsfw_tag}:\n  {it['url']}\n")
+
+        conteudo = "\n".join(linhas)
+        return send_file(
+            io.BytesIO(conteudo.encode("utf-8")),
+            mimetype="text/plain; charset=utf-8",
+            as_attachment=True,
+            download_name=f"Sherlock_{username}_redes.txt"
+        )
+    else:
+        # Formato CSV UTF-8 com BOM para Excel PT-BR
+        linhas = ["Rede / Plataforma;URL do Perfil;Conteudo Adulto (NSFW);Data Identificacao"]
+        for it in encontrados:
+            nsfw_str = "Sim" if it.get("is_nsfw") else "Não"
+            linhas.append(f"{it['site']};{it['url']};{nsfw_str};{it.get('encontrado_em', '')}")
+        conteudo = "\n".join(linhas)
+        return send_file(
+            io.BytesIO(b"\xef\xbb\xbf" + conteudo.encode("utf-8")),
+            mimetype="text/csv; charset=utf-8",
+            as_attachment=True,
+            download_name=f"Sherlock_{username}_redes.csv"
+        )
+
+
+# ==============================================================================
+# API: BLOCO DE NOTAS OPERACIONAL (ANOTAÇÕES & "ONDE PAREI")
+# ==============================================================================
+
+@app.route("/api/notas", methods=["GET", "POST"])
+def api_notas():
+    if request.method == "GET":
+        caso_id = request.args.get("caso_id")
+        notas = listar_notas(caso_id=caso_id)
+        rascunho = obter_rascunho_rapido()
+        casos_map = {int(c["id"]): c.get("nome", "") for c in carregar_casos() if c.get("id")}
+        for n in notas:
+            cid = n.get("caso_id")
+            n["caso_nome"] = casos_map.get(int(cid), "") if cid else ""
+        return jsonify({
+            "sucesso": True,
+            "notas": notas,
+            "rascunho": rascunho
+        })
+
+    data = request.json or {}
+    titulo = str(data.get("titulo", "")).strip()
+    conteudo = str(data.get("conteudo", "")).strip()
+    if not titulo and not conteudo:
+        return jsonify({"sucesso": False, "erro": "Escreva um título ou conteúdo para salvar a anotação."}), 400
+
+    nota = criar_nota(
+        titulo=titulo or "Anotação Operacional",
+        conteudo=conteudo,
+        categoria=str(data.get("categoria", "GERAL")),
+        alvo_vinculado=str(data.get("alvo_vinculado", "")),
+        caso_id=data.get("caso_id"),
+        fixada=bool(data.get("fixada", False))
+    )
+    log_event(f"Nova anotação registrada no Bloco de Notas: '{nota['titulo']}'.", "INFO")
+    return jsonify({"sucesso": True, "nota": nota})
+
+
+@app.route("/api/notas/<int:nota_id>", methods=["PUT", "DELETE"])
+def api_nota_item(nota_id):
+    if request.method == "DELETE":
+        ok = excluir_nota(nota_id)
+        if not ok:
+            return jsonify({"sucesso": False, "erro": "Anotação não encontrada."}), 404
+        return jsonify({"sucesso": True})
+
+    data = request.json or {}
+    atualizada = atualizar_nota(nota_id, data)
+    if not atualizada:
+        return jsonify({"sucesso": False, "erro": "Anotação não encontrada."}), 404
+    return jsonify({"sucesso": True, "nota": atualizada})
+
+
+@app.route("/api/notas/<int:nota_id>/fixar", methods=["POST"])
+def api_nota_fixar(nota_id):
+    atualizada = alternar_fixar_nota(nota_id)
+    if not atualizada:
+        return jsonify({"sucesso": False, "erro": "Anotação não encontrada."}), 404
+    return jsonify({"sucesso": True, "nota": atualizada})
+
+
+@app.route("/api/notas/limpar", methods=["POST"])
+def api_notas_limpar():
+    removidas = limpar_todas_notas()
+    log_event(f"Bloco de Notas limpo ({removidas} anotação(ões) removida(s)).", "AVISO")
+    return jsonify({"sucesso": True, "removidas": removidas})
+
+
+@app.route("/api/notas/rascunho", methods=["GET", "POST"])
+def api_notas_rascunho():
+    if request.method == "GET":
+        return jsonify({"sucesso": True, "rascunho": obter_rascunho_rapido()})
+    data = request.json or {}
+    salvo = salvar_rascunho_rapido(str(data.get("texto", "")))
+    return jsonify({"sucesso": True, "rascunho": salvo})
+
+
+@app.route("/api/notas/exportar", methods=["GET"])
+def api_notas_exportar():
+    rascunho = obter_rascunho_rapido()
+    notas = listar_notas()
+    casos_map = {int(c["id"]): c.get("nome", "") for c in carregar_casos() if c.get("id")}
+
+    linhas = [
+        "============================================================",
+        " BLOCO DE NOTAS & DIÁRIO DE INVESTIGAÇÃO - SHARLOKINSTA",
+        f" Exportado em: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "============================================================\n",
+        "--- QUADRO RÁPIDO: ONDE PAREI / PRÓXIMOS PASSOS ---"
+    ]
+    if rascunho.get("atualizado_em"):
+        linhas.append(f"(Última edição: {rascunho['atualizado_em']})")
+    linhas.append(rascunho.get("texto") or "(Sem rascunho preenchido)")
+    linhas.append("\n============================================================")
+    linhas.append(f" ANOTAÇÕES SALVAS ({len(notas)})")
+    linhas.append("============================================================\n")
+
+    if not notas:
+        linhas.append("Nenhuma anotação cadastrada.")
+    else:
+        for n in notas:
+            pin_str = " [FIXADA]" if n.get("fixada") else ""
+            linhas.append(f"• [{n['categoria']}]{pin_str} {n['titulo']}")
+            meta = [f"Atualizado: {n['atualizado_em']}"]
+            if n.get("alvo_vinculado"):
+                meta.append(f"Alvo: @{n['alvo_vinculado']}")
+            if n.get("caso_id"):
+                meta.append(f"Caso: {casos_map.get(int(n['caso_id']), '#' + str(n['caso_id']))}")
+            linhas.append("  " + " | ".join(meta))
+            linhas.append(f"  {n['conteudo']}\n" + ("-" * 55))
+
+    conteudo = "\n".join(linhas)
+    return send_file(
+        io.BytesIO(conteudo.encode("utf-8")),
+        mimetype="text/plain; charset=utf-8",
+        as_attachment=True,
+        download_name=f"Bloco_de_Notas_SharlokInsta_{datetime.now().strftime('%Y%m%d_%H%M')}.txt"
     )
 
 

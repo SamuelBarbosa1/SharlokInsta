@@ -206,6 +206,37 @@ def _sincronizar_caso_nos_alvos_monitorados(usernames_lower: list, caso_id):
         pass
 
 
+def pasta_tem_extracao_valida(pasta_path: str) -> bool:
+    """
+    Retorna True somente se a pasta em downloads/ possuir conteúdo extraído real
+    (ignora pastas vazias ou stubs de perfis privados bloqueados sem mídias).
+    """
+    if not pasta_path or not os.path.isdir(pasta_path):
+        return False
+
+    total_files = 0
+    for _r, _d, files in os.walk(pasta_path):
+        total_files += len(files)
+    if total_files == 0:
+        return False
+
+    json_file = os.path.join(pasta_path, "dados_perfil.json")
+    if os.path.exists(json_file):
+        try:
+            with open(json_file, "r", encoding="utf-8") as f:
+                dados = json.load(f)
+            st_seg = ((dados.get("conexoes") or {}).get("seguidores") or {}).get("status", "")
+            fotos = int(dados.get("total_fotos_feed") or 0)
+            stories = int(dados.get("total_stories_baixados") or 0)
+            destaques = int(dados.get("total_destaques_baixados") or 0)
+            if st_seg == "PRIVADO_BLOQUEADO" and fotos == 0 and stories == 0 and destaques == 0:
+                return False
+        except Exception:
+            pass
+
+    return True
+
+
 def atualizar_status_automatico_casos() -> list:
     """
     Sincroniza automaticamente o status de cada Caso:
@@ -221,7 +252,8 @@ def atualizar_status_automatico_casos() -> list:
         pastas_dl = set()
         if os.path.exists("downloads"):
             for item in os.listdir("downloads"):
-                if os.path.isdir(os.path.join("downloads", item)):
+                full_p = os.path.join("downloads", item)
+                if pasta_tem_extracao_valida(full_p):
                     pastas_dl.add(item.replace("@", "").lower())
 
         alterou = False
